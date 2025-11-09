@@ -1,16 +1,13 @@
-//! Verifiable storage server
-
 mod auth;
 mod handlers;
 mod state;
-mod storage_backend;
 
 use actix_web::{web, App, HttpServer};
 use clap::{Arg, Command};
 use state::AppState;
 use std::fs;
 use std::path::PathBuf;
-use storage_backend::StorageBackend;
+use storage::StorageBackend;
 use tracing::info;
 use tracing_subscriber;
 
@@ -28,7 +25,11 @@ async fn main() -> std::io::Result<()> {
                     .add_directive("actix_server::accept=warn".parse().unwrap())
             }),
         )
+        .with_writer(std::io::stderr)
         .init();
+
+    // Log startup
+    eprintln!("Starting verifiable storage server...");
 
     // Parse command line arguments
     let matches = Command::new("server")
@@ -76,16 +77,19 @@ async fn main() -> std::io::Result<()> {
             .cloned()
             .or_else(|| std::env::var("DATABASE_URL").ok())
             .ok_or_else(|| {
+                eprintln!("ERROR: Database URL required when using database storage. Set --database-url or DATABASE_URL env var");
                 std::io::Error::new(
                     std::io::ErrorKind::InvalidInput,
                     "Database URL required when using database storage. Set --database-url or DATABASE_URL env var",
                 )
             })?;
         info!("Using database storage: {}", database_url);
+        eprintln!("Connecting to database...");
         StorageBackend::Database(database_url.to_string())
             .initialize()
             .await
             .map_err(|e| {
+                eprintln!("ERROR: Failed to initialize database storage: {}", e);
                 std::io::Error::new(
                     std::io::ErrorKind::Other,
                     format!("Failed to initialize database storage: {}", e),
@@ -105,12 +109,14 @@ async fn main() -> std::io::Result<()> {
             .initialize()
             .await
             .map_err(|e| {
+                eprintln!("ERROR: Failed to initialize filesystem storage: {}", e);
                 std::io::Error::new(
                     std::io::ErrorKind::Other,
                     format!("Failed to initialize filesystem storage: {}", e),
                 )
             })?
     };
+    eprintln!("Storage backend initialized successfully");
 
     // Initialize application state
     let state = web::Data::new(AppState::new(storage));
@@ -127,16 +133,25 @@ async fn main() -> std::io::Result<()> {
     let bind_address = format!("{}:{}", host, port);
 
     info!("Starting server on http://{}", bind_address);
+    eprintln!("Starting server on http://{}", bind_address);
 
     HttpServer::new(move || {
         App::new()
             .app_data(state.clone())
-            .service(handlers::upload)
-            .service(handlers::download)
-            .service(handlers::health)
+            .service(handlers::upload::upload)
+            .service(handlers::download::download)
+            .service(handlers::upload::health)
     })
-    .bind(&bind_address)?
-    .workers(1) // Use single worker to reduce shutdown logs
+    .bind(&bind_address)
+    .map_err(|e| {
+        eprintln!("ERROR: Failed to bind to {}: {}", bind_address, e);
+        e
+    })?
+    .workers(1)
     .run()
     .await
+    .map_err(|e| {
+        eprintln!("ERROR: Server runtime error: {}", e);
+        e
+    })
 }

@@ -1,13 +1,13 @@
-//! Storage backend initialization
-
+use crate::{database::DatabaseStorage, filesystem::FilesystemStorage, Storage};
 use anyhow::Result;
 use std::sync::Arc;
-use storage::{database::DatabaseStorage, filesystem::FilesystemStorage, Storage};
 
 /// Storage backend type
 pub enum StorageBackend {
-    Filesystem(String), // data directory path
-    Database(String),   // database URL
+    /// Filesystem storage with data directory path
+    Filesystem(String),
+    /// Database storage with database URL
+    Database(String),
 }
 
 impl StorageBackend {
@@ -25,4 +25,3 @@ impl StorageBackend {
         }
     }
 }
-
