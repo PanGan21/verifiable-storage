@@ -150,6 +150,30 @@ impl Storage for DatabaseStorage {
         Ok(())
     }
 
+    async fn store_file_with_metadata(
+        &self,
+        client_id: &str,
+        batch_id: &str,
+        filename: &str,
+        content: &[u8],
+    ) -> Result<()> {
+        // Use a transaction to ensure both operations succeed or fail together
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .context("Failed to begin transaction")?;
+
+        Queries::ensure_batch(&mut *tx, client_id, batch_id).await?;
+        Queries::store_file(&mut *tx, client_id, batch_id, filename, content).await?;
+        Queries::add_filename_to_metadata(&mut *tx, client_id, batch_id, filename).await?;
+
+        tx.commit()
+            .await
+            .context("Failed to commit transaction for atomic file and metadata storage")?;
+        Ok(())
+    }
+
     async fn read_file(&self, client_id: &str, batch_id: &str, filename: &str) -> Result<Vec<u8>> {
         Queries::read_file(&self.pool, client_id, batch_id, filename)
             .await?

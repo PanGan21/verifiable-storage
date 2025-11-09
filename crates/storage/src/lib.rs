@@ -20,6 +20,17 @@ pub trait Storage: Send + Sync {
         content: &[u8],
     ) -> Result<()>;
 
+    /// Store a file and add it to metadata atomically
+    /// For database: uses a transaction
+    /// For filesystem: uses atomic file operations (temp file + fsync + rename)
+    async fn store_file_with_metadata(
+        &self,
+        client_id: &str,
+        batch_id: &str,
+        filename: &str,
+        content: &[u8],
+    ) -> Result<()>;
+
     /// Read a file from a batch
     async fn read_file(&self, client_id: &str, batch_id: &str, filename: &str) -> Result<Vec<u8>>;
 

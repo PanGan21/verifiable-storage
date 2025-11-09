@@ -5,6 +5,7 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use metadata::Metadata;
 use std::path::PathBuf;
+use tokio::io::AsyncWriteExt;
 
 /// Filesystem-based storage implementation
 pub struct FilesystemStorage {
@@ -39,6 +40,25 @@ impl FilesystemStorage {
         self.batch_dir(client_id, batch_id).join("metadata.json")
     }
 
+    /// Write file with fsync to ensure data is persisted
+    async fn write_file_atomic(file_path: &PathBuf, content: &[u8]) -> Result<()> {
+        // Write directly to target file and sync to ensure data is persisted
+        let mut file = tokio::fs::File::create(file_path)
+            .await
+            .context("Failed to create file")?;
+
+        file.write_all(content)
+            .await
+            .context("Failed to write content to file")?;
+
+        // Sync file data to disk to ensure it's persisted
+        file.sync_all()
+            .await
+            .context("Failed to sync file to disk")?;
+
+        Ok(())
+    }
+
     /// Get public key file path
     fn public_key_path(&self, client_id: &str) -> PathBuf {
         self.client_dir(client_id).join("public_key.hex")
@@ -60,9 +80,45 @@ impl Storage for FilesystemStorage {
         tokio::fs::create_dir_all(&batch_dir)
             .await
             .context("Failed to create batch directory")?;
-        tokio::fs::write(&file_path, content)
+        Self::write_file_atomic(&file_path, content).await?;
+        Ok(())
+    }
+
+    async fn store_file_with_metadata(
+        &self,
+        client_id: &str,
+        batch_id: &str,
+        filename: &str,
+        content: &[u8],
+    ) -> Result<()> {
+        let batch_dir = self.batch_dir(client_id, batch_id);
+        let file_path = self.file_path(client_id, batch_id, filename);
+        let metadata_file = self.metadata_path(client_id, batch_id);
+
+        // Create batch directory if it doesn't exist
+        tokio::fs::create_dir_all(&batch_dir)
             .await
-            .context("Failed to write file")?;
+            .context("Failed to create batch directory")?;
+
+        // Load or create metadata
+        let mut metadata = if metadata_file.exists() {
+            Metadata::load(&metadata_file).await?
+        } else {
+            serde_json::Map::new()
+        };
+
+        Metadata::insert_filename(&mut metadata, filename);
+
+        // Write file atomically
+        Self::write_file_atomic(&file_path, content)
+            .await
+            .context("Failed to write file atomically")?;
+
+        // Write metadata atomically
+        Metadata::save_atomic(&metadata_file, &metadata)
+            .await
+            .context("Failed to write metadata atomically")?;
+
         Ok(())
     }
 

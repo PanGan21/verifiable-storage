@@ -11,7 +11,7 @@ hex = { workspace = true }
 async-trait = "0.1"
 
 # Filesystem storage dependencies
-tokio = { workspace = true, features = ["fs"] }
+tokio = { workspace = true, features = ["fs", "io-util"] }
 
 # Database storage (PostgreSQL only)
 [dependencies.sqlx]

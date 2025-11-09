@@ -47,17 +47,12 @@ pub async fn upload(
 
     let file_content = decode_and_verify_file_content(&req)?;
 
+    // Store file and metadata atomically
     state
         .storage
-        .store_file(&client_id, &req.batch_id, &req.filename, &file_content)
+        .store_file_with_metadata(&client_id, &req.batch_id, &req.filename, &file_content)
         .await
-        .map_err(|e| handle_server_error("Failed to store file", e))?;
-
-    state
-        .storage
-        .add_filename_to_metadata(&client_id, &req.batch_id, &req.filename)
-        .await
-        .map_err(|e| handle_server_error("Failed to update metadata", e))?;
+        .map_err(|e| handle_server_error("Failed to store file and metadata", e))?;
 
     info!(
         "POST /upload - File uploaded: {} (client: {}, batch: {})",

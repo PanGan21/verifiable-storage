@@ -99,7 +99,7 @@ impl Queries {
 
     /// Add filename to batch metadata
     pub async fn add_filename_to_metadata(
-        pool: &PgPool,
+        pool: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
         client_id: &str,
         batch_id: &str,
         filename: &str,
