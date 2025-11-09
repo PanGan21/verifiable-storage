@@ -1,5 +1,3 @@
-//! Verifiable storage client
-
 mod config;
 mod download;
 mod keypair;
@@ -41,41 +39,37 @@ enum Commands {
         #[arg(short, long)]
         batch_id: String,
     },
-        /// Download and verify a file from server
-        Download {
-            /// Filename to download
-            filename: String,
-            /// Batch ID this file belongs to
-            #[arg(short, long)]
-            batch_id: String,
-            /// Server URL (defaults to CLIENT_SERVER_URL env var or http://127.0.0.1:8080)
-            #[arg(short, long)]
-            server: Option<String>,
-            /// Root hash to verify against (if not provided, loads from client_data/{batch_id}/root_hash.txt)
-            #[arg(short, long)]
-            root_hash: Option<String>,
-            /// Output directory for downloaded file (default: client_data/{batch_id}/downloaded/)
-            #[arg(short, long)]
-            output_dir: Option<PathBuf>,
-        },
+    /// Download and verify a file from server
+    Download {
+        /// Filename to download
+        filename: String,
+        /// Batch ID this file belongs to
+        #[arg(short, long)]
+        batch_id: String,
+        /// Server URL (defaults to CLIENT_SERVER_URL env var or http://127.0.0.1:8080)
+        #[arg(short, long)]
+        server: Option<String>,
+        /// Root hash to verify against (if not provided, loads from client_data/{batch_id}/root_hash.txt)
+        #[arg(short, long)]
+        root_hash: Option<String>,
+        /// Output directory for downloaded file (default: client_data/{batch_id}/downloaded/)
+        #[arg(short, long)]
+        output_dir: Option<PathBuf>,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
-    // Initialize logger
     init_logger();
 
     let cli = Cli::parse();
     let config = ClientConfig::load();
 
-    // Handle generate-keypair command separately (doesn't need existing keypair)
     if let Commands::GenerateKeypair { force } = &cli.command {
         return generate_keypair_command(*force);
     }
 
-    // For all other commands, load or create keypair
     let (signing_key, client_id) = get_or_create_keypair()?;
 
-    // Save client ID to file for easy access
     let client_id_file = config.data_dir.join("client_id.txt");
     if let Some(parent) = client_id_file.parent() {
         fs::create_dir_all(parent)?;
@@ -102,7 +96,6 @@ fn main() -> anyhow::Result<()> {
             output_dir,
         } => {
             let server_url = config.get_server_url(server.as_deref());
-            // Load root hash from file if not provided
             let root_hash = root_hash.unwrap_or_else(|| {
                 download::load_root_hash(&batch_id).expect("Failed to load root hash")
             });

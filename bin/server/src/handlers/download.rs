@@ -36,16 +36,20 @@ pub async fn download(
         client_id
     );
 
-    // Load batch metadata and verify file exists
     let filenames = state
         .storage
         .load_batch_filenames(&client_id, &req.batch_id)
         .await
         .map_err(|e| handle_not_found("Failed to load batch", &req.batch_id, e))?;
 
-    verify_file_in_batch(&filenames, &req.filename, &req.batch_id)?;
+    if !filenames.contains(&req.filename.to_string()) {
+        return Err(actix_web::error::ErrorNotFound(format!(
+            "File {} not found in batch {}",
+            req.filename, req.batch_id
+        )));
+    }
 
-    // Verify file exists in storage
+    // Double-check file exists in storage (defense in depth)
     let exists = state
         .storage
         .file_exists(&client_id, &req.batch_id, &req.filename)
@@ -59,7 +63,6 @@ pub async fn download(
         )));
     }
 
-    // Read file and prepare response data
     let file_content = state
         .storage
         .read_file(&client_id, &req.batch_id, &req.filename)
@@ -94,15 +97,4 @@ fn build_message(filename: &str, batch_id: &str, timestamp: u64) -> Vec<u8> {
     message.extend_from_slice(batch_id.as_bytes());
     message.extend_from_slice(&timestamp.to_be_bytes());
     message
-}
-
-/// Verify that filename exists in batch
-fn verify_file_in_batch(filenames: &[String], filename: &str, batch_id: &str) -> ActixResult<()> {
-    if !filenames.contains(&filename.to_string()) {
-        return Err(actix_web::error::ErrorNotFound(format!(
-            "File {} not found in batch {}",
-            filename, batch_id
-        )));
-    }
-    Ok(())
 }

@@ -1,5 +1,3 @@
-//! Server application state management
-
 use std::sync::Arc;
 
 /// Server application state
@@ -12,5 +10,3 @@ impl AppState {
         Self { storage }
     }
 }
-
-

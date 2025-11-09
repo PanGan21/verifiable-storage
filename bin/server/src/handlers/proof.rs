@@ -41,11 +41,8 @@ pub async fn generate_proof(
             actix_web::error::ErrorNotFound(format!("File {} not found", filename))
         })?;
 
-    let proof = tree
-        .generate_proof(file_index)
-        .map_err(|e| handle_server_error("Failed to generate proof", e))?;
-
-    Ok(proof)
+    tree.generate_proof(file_index)
+        .map_err(|e| handle_server_error("Failed to generate proof", e))
 }
 
 /// Convert Merkle proof to JSON format

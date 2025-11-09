@@ -1,5 +1,3 @@
-/// Initialize the server logger
-/// Sets up tracing with environment filter and stderr output
 pub fn init() {
     tracing_subscriber::fmt()
         .with_env_filter(

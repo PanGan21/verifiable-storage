@@ -1,7 +1,7 @@
 use crate::auth::AuthVerifier;
 use crate::handlers::error::{handle_auth_error, handle_error, handle_server_error};
 use crate::state::AppState;
-use actix_web::{post, web, HttpResponse, Result as ActixResult};
+use actix_web::{get, post, web, HttpResponse, Result as ActixResult};
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use common::UploadRequest;
@@ -19,25 +19,26 @@ pub async fn upload(
         req.filename, req.batch_id
     );
 
-    // Verify signature
     let message = build_message(&req);
     let signature = AuthVerifier::parse_signature(&req.signature)
         .map_err(|e| handle_error("Failed to parse signature", e))?;
 
-    let client_id =
+    let (client_id, is_new_client) =
         AuthVerifier::verify_request_signature(&state, &message, &signature, &req.public_key)
             .await
             .map_err(|e| handle_auth_error("Signature verification failed", e))?;
+
+    if is_new_client {
+        info!("POST /upload - Registered new client: {}", client_id);
+    }
 
     info!(
         "POST /upload - Signature verified for client: {}",
         client_id
     );
 
-    // Decode and verify file content
     let file_content = decode_and_verify_file_content(&req)?;
 
-    // Store file and update metadata
     state
         .storage
         .store_file(&client_id, &req.batch_id, &req.filename, &file_content)
@@ -89,7 +90,7 @@ fn decode_and_verify_file_content(req: &UploadRequest) -> ActixResult<Vec<u8>> {
 }
 
 /// Health check endpoint
-#[actix_web::get("/health")]
+#[get("/health")]
 pub async fn health() -> ActixResult<HttpResponse> {
     Ok(HttpResponse::Ok().json(common::HealthResponse {
         status: "ok".to_string(),

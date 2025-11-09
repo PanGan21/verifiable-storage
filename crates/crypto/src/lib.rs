@@ -21,10 +21,9 @@ pub fn compute_client_id(public_key: &VerifyingKey) -> String {
 /// Load or generate keypair from file
 pub fn load_or_generate_keypair(key_file: &Path) -> Result<(SigningKey, VerifyingKey, String)> {
     if key_file.exists() {
-        // Load existing keypair
         let key_data = fs::read_to_string(key_file).context("Failed to read key file")?;
 
-        // Parse as hex-encoded secret key (64 bytes: 32-byte seed + 32-byte public key)
+        // Parse as hex-encoded key (64 bytes: 32-byte secret + 32-byte public)
         let key_bytes = hex::decode(key_data.trim()).context("Failed to decode key file")?;
 
         if key_bytes.len() != 64 {
@@ -47,7 +46,7 @@ pub fn load_or_generate_keypair(key_file: &Path) -> Result<(SigningKey, Verifyin
         let (signing_key, verifying_key) = generate_keypair();
         let client_id = compute_client_id(&verifying_key);
 
-        // Save keypair (store secret key + public key = 64 bytes)
+        // Store secret key + public key = 64 bytes
         let mut key_data = Vec::with_capacity(64);
         key_data.extend_from_slice(signing_key.as_bytes());
         key_data.extend_from_slice(verifying_key.as_bytes());
@@ -86,7 +85,7 @@ pub fn public_key_from_bytes(bytes: &[u8]) -> Result<VerifyingKey> {
     VerifyingKey::from_bytes(&array).map_err(|e| anyhow::anyhow!("Invalid public key: {}", e))
 }
 
-/// Compute file hash for Merkle tree leaf: hash_leaf(file_content)
+/// Compute file hash for Merkle tree leaf with domain separation prefix
 pub fn hash_leaf(data: &[u8]) -> [u8; 32] {
     Sha256::new()
         .chain_update([0x00]) // Domain separation prefix for leaves

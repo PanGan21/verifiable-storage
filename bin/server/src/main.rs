@@ -13,18 +13,12 @@ use tracing::{error, info};
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    // Initialize logger
     init_logger();
 
-    info!(
-        "Starting verifiable storage server (PID: {})",
-        std::process::id()
-    );
+    info!("Starting verifiable storage server (PID: {})", std::process::id());
 
-    // Load configuration
     let config = ServerConfig::load()?;
 
-    // Initialize storage backend
     let storage = match config.storage_type {
         config::StorageType::Database => {
             let database_url = config.database_url.as_ref().unwrap();
@@ -34,7 +28,6 @@ async fn main() -> std::io::Result<()> {
                 config.database_retry_config.max_attempts,
                 config.database_retry_config.initial_delay_seconds
             );
-            info!("Connecting to database...");
             StorageBackend::Database {
                 database_url: database_url.clone(),
                 retry_config: Some(config.database_retry_config.clone()),
@@ -79,13 +72,10 @@ async fn main() -> std::io::Result<()> {
     };
     info!("Storage backend initialized successfully");
 
-    // Initialize application state
     let state = web::Data::new(AppState::new(storage));
-
     let bind_address = config.bind_address();
 
     info!("Starting server on http://{}", bind_address);
-    info!("Server state initialized, creating HttpServer...");
 
     let bind_addr = bind_address.clone();
     let server = HttpServer::new(move || {
@@ -102,8 +92,5 @@ async fn main() -> std::io::Result<()> {
     })?;
 
     info!("Server bound successfully to http://{}", bind_address);
-
-    // Run the server - this will block until the server shuts down
-    // The server runs indefinitely until it receives a shutdown signal
     server.workers(1).run().await
 }

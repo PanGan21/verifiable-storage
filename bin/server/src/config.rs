@@ -28,8 +28,6 @@ pub enum StorageType {
 }
 
 impl ServerConfig {
-    /// Load configuration from command line arguments and environment variables
-    /// Priority: command-line args > environment variables > defaults
     pub fn load() -> Result<Self, std::io::Error> {
         let matches = Command::new("server")
             .arg(
@@ -85,32 +83,31 @@ impl ServerConfig {
             }
         };
 
-        // Get data directory (for filesystem storage)
-        let data_dir = matches
-            .get_one::<String>("data-dir")
-            .map(|s| s.as_str())
-            .unwrap_or("server_data");
-        let data_dir_path = PathBuf::from(data_dir);
+        let data_dir = PathBuf::from(
+            matches
+                .get_one::<String>("data-dir")
+                .map(|s| s.as_str())
+                .unwrap_or("server_data"),
+        );
 
-        // Get database URL (for database storage)
         let database_url = if storage_type == StorageType::Database {
-            let url = matches
-                .get_one::<String>("database-url")
-                .cloned()
-                .or_else(|| std::env::var("DATABASE_URL").ok())
-                .ok_or_else(|| {
-                    error!("Database URL required when using database storage. Set --database-url or DATABASE_URL env var");
-                    std::io::Error::new(
-                        std::io::ErrorKind::InvalidInput,
-                        "Database URL required when using database storage. Set --database-url or DATABASE_URL env var",
-                    )
-                })?;
-            Some(url)
+            Some(
+                matches
+                    .get_one::<String>("database-url")
+                    .cloned()
+                    .or_else(|| std::env::var("DATABASE_URL").ok())
+                    .ok_or_else(|| {
+                        error!("Database URL required when using database storage. Set --database-url or DATABASE_URL env var");
+                        std::io::Error::new(
+                            std::io::ErrorKind::InvalidInput,
+                            "Database URL required when using database storage. Set --database-url or DATABASE_URL env var",
+                        )
+                    })?,
+            )
         } else {
             None
         };
 
-        // Get host and port from command line arguments, environment variables, or defaults
         let env_host = std::env::var("SERVER_HOST").ok();
         let env_port = std::env::var("SERVER_PORT").ok();
 
@@ -134,20 +131,16 @@ impl ServerConfig {
             )
         })?;
 
-        // Get database retry configuration from environment variables
-        let database_retry_config = DatabaseRetryConfig::from_env();
-
         Ok(ServerConfig {
             storage_type,
             host,
             port,
-            data_dir: data_dir_path,
+            data_dir,
             database_url,
-            database_retry_config,
+            database_retry_config: DatabaseRetryConfig::from_env(),
         })
     }
 
-    /// Get bind address as a string
     pub fn bind_address(&self) -> String {
         format!("{}:{}", self.host, self.port)
     }
