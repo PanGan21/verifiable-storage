@@ -3,13 +3,15 @@
 mod auth;
 mod handlers;
 mod state;
-mod storage;
+mod storage_backend;
 
 use actix_web::{web, App, HttpServer};
+use clap::{Arg, Command};
 use state::AppState;
 use std::fs;
 use std::path::PathBuf;
-use tracing::{info, warn};
+use storage_backend::StorageBackend;
+use tracing::info;
 use tracing_subscriber;
 
 const SERVER_DATA_DIR: &str = "server_data";
@@ -28,20 +30,78 @@ async fn main() -> std::io::Result<()> {
         )
         .init();
 
-    let args: Vec<String> = std::env::args().collect();
-    let data_dir = args.get(1).map(|s| s.as_str()).unwrap_or(SERVER_DATA_DIR);
-    let data_dir_path = PathBuf::from(data_dir);
-    if !data_dir_path.exists() {
-        fs::create_dir_all(&data_dir_path)?;
-    }
+    // Parse command line arguments
+    let matches = Command::new("server")
+        .arg(
+            Arg::new("storage")
+                .long("storage")
+                .value_name("TYPE")
+                .help("Storage backend type: 'fs' for filesystem or 'db' for database")
+                .default_value("fs"),
+        )
+        .arg(
+            Arg::new("data-dir")
+                .long("data-dir")
+                .value_name("DIR")
+                .help("Data directory for filesystem storage")
+                .default_value(SERVER_DATA_DIR),
+        )
+        .arg(
+            Arg::new("database-url")
+                .long("database-url")
+                .value_name("URL")
+                .help("Database URL for database storage (can also use DATABASE_URL env var)"),
+        )
+        .get_matches();
 
-    let state = web::Data::new(AppState::new());
-    if let Err(e) = state.load_from_disk() {
-        warn!("Failed to load state from disk: {}", e);
-    }
+    // Initialize storage backend
+    let storage = if matches.get_one::<String>("storage").map(|s| s.as_str()) == Some("db") {
+        // Get database URL as owned String
+        let database_url = matches
+            .get_one::<String>("database-url")
+            .cloned()
+            .or_else(|| std::env::var("DATABASE_URL").ok())
+            .ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "Database URL required when using database storage. Set --database-url or DATABASE_URL env var",
+                )
+            })?;
+        info!("Using database storage: {}", database_url);
+        StorageBackend::Database(database_url.to_string())
+            .initialize()
+            .await
+            .map_err(|e| {
+                std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("Failed to initialize database storage: {}", e),
+                )
+            })?
+    } else {
+        let data_dir = matches
+            .get_one::<String>("data-dir")
+            .map(|s| s.as_str())
+            .unwrap_or(SERVER_DATA_DIR);
+        let data_dir_path = PathBuf::from(data_dir);
+        if !data_dir_path.exists() {
+            fs::create_dir_all(&data_dir_path)?;
+        }
+        info!("Using filesystem storage: {:?}", data_dir_path);
+        StorageBackend::Filesystem(data_dir.to_string())
+            .initialize()
+            .await
+            .map_err(|e| {
+                std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("Failed to initialize filesystem storage: {}", e),
+                )
+            })?
+    };
+
+    // Initialize application state
+    let state = web::Data::new(AppState::new(storage));
 
     info!("Starting server on http://127.0.0.1:8080");
-    info!("Data directory: {:?}", data_dir);
 
     HttpServer::new(move || {
         App::new()

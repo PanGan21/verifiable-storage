@@ -24,4 +24,6 @@ uuid = { workspace = true }
 merkle-tree = { path = "../../crates/merkle-tree" }
 crypto = { path = "../../crates/crypto" }
 common = { path = "../../crates/common" }
+storage = { path = "../../crates/storage" }
+clap = { workspace = true }
 

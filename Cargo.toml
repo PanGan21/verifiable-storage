@@ -3,6 +3,7 @@ members = [
     "crates/merkle-tree",
     "crates/crypto",
     "crates/common",
+    "crates/storage",
     "bin/client",
     "bin/server",
 ]

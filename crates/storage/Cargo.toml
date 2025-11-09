@@ -1,0 +1,24 @@
+[package]
+name = "storage"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+hex = { workspace = true }
+async-trait = "0.1"
+
+# Filesystem storage dependencies
+tokio = { workspace = true, features = ["fs"] }
+
+# Database storage (PostgreSQL only)
+[dependencies.sqlx]
+version = "0.8"
+default-features = false
+features = ["runtime-tokio-native-tls", "postgres"]
+
+[dependencies.tracing]
+workspace = true
+

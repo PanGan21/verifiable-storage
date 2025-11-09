@@ -6,18 +6,14 @@ use anyhow::{Context, Result};
 use crypto::{compute_client_id, public_key_from_bytes, verify_signature};
 use ed25519_dalek::Signature;
 use hex;
-use std::fs;
-use std::path::PathBuf;
 use tracing::info;
-
-const SERVER_DATA_DIR: &str = "server_data";
 
 /// Handles authentication and signature verification
 pub struct AuthVerifier;
 
 impl AuthVerifier {
     /// Verify request signature and auto-register client if needed
-    pub fn verify_request_signature(
+    pub async fn verify_request_signature(
         state: &web::Data<AppState>,
         message: &[u8],
         signature: &Signature,
@@ -37,22 +33,31 @@ impl AuthVerifier {
             .context("Signature verification failed")?;
 
         // Check if client is registered, if not, auto-register
-        Self::get_or_create_client(state, &client_id, &public_key_bytes, &public_key)?;
+        Self::get_or_create_client(state, &client_id, &public_key_bytes, &public_key).await?;
 
         Ok(client_id)
     }
 
     /// Verify request signature using stored public keys
-    pub fn verify_request_signature_with_stored_keys(
+    /// Fetches public keys on-demand from storage
+    pub async fn verify_request_signature_with_stored_keys(
         state: &web::Data<AppState>,
         message: &[u8],
         signature: &Signature,
     ) -> Result<String> {
-        // Try all stored public keys to find the one that verifies the signature
-        let public_keys = state.public_keys.lock().unwrap();
-        for (client_id, public_key) in public_keys.iter() {
-            if verify_signature(public_key, message, signature).is_ok() {
-                return Ok(client_id.clone());
+        // Get all client IDs from storage
+        let client_ids = state.storage.list_client_ids().await
+            .context("Failed to list client IDs")?;
+
+        // Try each client's public key to find the one that verifies the signature
+        for client_id in client_ids {
+            if let Some(public_key_bytes) = state.storage.load_public_key(&client_id).await
+                .context("Failed to load public key")? {
+                let public_key = public_key_from_bytes(&public_key_bytes)
+                    .context("Failed to parse public key")?;
+                if verify_signature(&public_key, message, signature).is_ok() {
+                    return Ok(client_id);
+                }
             }
         }
         anyhow::bail!("Signature verification failed: no matching public key found");
@@ -69,32 +74,24 @@ impl AuthVerifier {
     }
 
     /// Ensure client is registered (auto-register if needed)
-    fn get_or_create_client(
+    async fn get_or_create_client(
         state: &web::Data<AppState>,
         client_id: &str,
         public_key_bytes: &[u8],
-        public_key: &ed25519_dalek::VerifyingKey,
+        _public_key: &ed25519_dalek::VerifyingKey,
     ) -> Result<()> {
-        let data_dir = PathBuf::from(SERVER_DATA_DIR).join(client_id);
-        let public_key_file = data_dir.join("public_key.hex");
+        // Check if public key exists in storage
+        let existing_key = state.storage.load_public_key(client_id).await?;
 
-        if !public_key_file.exists() {
+        if existing_key.is_none() {
             // Register: store public key
-            fs::create_dir_all(&data_dir).context("Failed to create client directory")?;
-            fs::write(&public_key_file, hex::encode(public_key_bytes))
-                .context("Failed to write public key")?;
-
-            // Update in-memory cache
-            let mut public_keys = state.public_keys.lock().unwrap();
-            public_keys.insert(client_id.to_string(), *public_key);
+            state
+                .storage
+                .store_public_key(client_id, public_key_bytes)
+                .await
+                .context("Failed to store public key")?;
 
             info!("POST /upload - Registered new client: {}", client_id);
-        } else {
-            // Client already registered, ensure it's in memory cache
-            let mut public_keys = state.public_keys.lock().unwrap();
-            if !public_keys.contains_key(client_id) {
-                public_keys.insert(client_id.to_string(), *public_key);
-            }
         }
 
         Ok(())

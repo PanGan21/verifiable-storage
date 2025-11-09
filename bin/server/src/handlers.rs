@@ -2,7 +2,6 @@
 
 use crate::auth::AuthVerifier;
 use crate::state::AppState;
-use crate::storage::BatchStorage;
 use actix_web::{get, post, web, HttpResponse, Result as ActixResult};
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
@@ -50,6 +49,7 @@ pub async fn upload(
         .map_err(|e| handle_error("Failed to parse signature", e))?;
 
     let client_id = AuthVerifier::verify_request_signature(&state, &message, &signature, &req.public_key)
+        .await
         .map_err(|e| handle_auth_error("Signature verification failed", e))?;
 
     info!(
@@ -61,10 +61,12 @@ pub async fn upload(
     let file_content = UploadHandler::decode_and_verify_file_content(&req)?;
 
     // Store file and update metadata
-    BatchStorage::store_file(&client_id, &req.batch_id, &req.filename, &file_content)
+    state.storage.store_file(&client_id, &req.batch_id, &req.filename, &file_content)
+        .await
         .map_err(|e| handle_server_error("Failed to store file", e))?;
 
-    BatchStorage::add_filename_to_metadata(&client_id, &req.batch_id, &req.filename)
+    state.storage.add_filename_to_metadata(&client_id, &req.batch_id, &req.filename)
+        .await
         .map_err(|e| handle_server_error("Failed to update metadata", e))?;
 
     info!(
@@ -94,6 +96,7 @@ pub async fn download(
         .map_err(|e| handle_error("Failed to parse signature", e))?;
 
     let client_id = AuthVerifier::verify_request_signature_with_stored_keys(&state, &message, &signature_obj)
+        .await
         .map_err(|e| handle_auth_error("Signature verification failed", e))?;
 
     info!(
@@ -102,7 +105,7 @@ pub async fn download(
     );
 
     // Generate proof for the requested file
-    let file_with_proof = DownloadHandler::generate_file_proof(&client_id, &req.batch_id, &req.filename)?;
+    let file_with_proof = DownloadHandler::generate_file_proof(&state, &client_id, &req.batch_id, &req.filename).await?;
 
     info!(
         "GET /download - File hash and proof for {} (proof length: {})",
@@ -170,13 +173,15 @@ impl DownloadHandler {
     }
 
     /// Generate Merkle proof for a file
-    pub fn generate_file_proof(
+    pub async fn generate_file_proof(
+        state: &web::Data<AppState>,
         client_id: &str,
         batch_id: &str,
         filename: &str,
     ) -> ActixResult<DownloadResponse> {
         // Load batch metadata
-        let filenames = BatchStorage::load_batch_filenames(client_id, batch_id)
+        let filenames = state.storage.load_batch_filenames(client_id, batch_id)
+            .await
             .map_err(|e| handle_not_found("Failed to load batch", batch_id, e))?;
 
         // Verify filename is in batch
@@ -188,7 +193,11 @@ impl DownloadHandler {
         }
 
         // Verify file exists
-        if !BatchStorage::file_exists(client_id, batch_id, filename) {
+        let exists = state.storage.file_exists(client_id, batch_id, filename)
+            .await
+            .map_err(|e| handle_server_error("Failed to check file existence", e))?;
+        
+        if !exists {
             return Err(actix_web::error::ErrorNotFound(format!(
                 "File {} not found in batch {} for client {}",
                 filename, batch_id, client_id
@@ -196,7 +205,8 @@ impl DownloadHandler {
         }
 
         // Read file and compute hash
-        let file_content = BatchStorage::read_file(client_id, batch_id, filename)
+        let file_content = state.storage.read_file(client_id, batch_id, filename)
+            .await
             .map_err(|e| handle_server_error("Failed to read file", e))?;
 
         let file_hash = hash_leaf(&file_content);
@@ -206,7 +216,7 @@ impl DownloadHandler {
         let file_content_b64 = STANDARD.encode(&file_content);
 
         // Build Merkle tree and generate proof
-        let proof = Self::build_merkle_proof(client_id, batch_id, &filenames, filename)?;
+        let proof = Self::build_merkle_proof(state, client_id, batch_id, &filenames, filename).await?;
 
         // Convert proof to JSON format
         let proof_json: Vec<ProofNodeJson> = proof
@@ -227,7 +237,8 @@ impl DownloadHandler {
     }
 
     /// Build Merkle tree and generate proof for a file
-    fn build_merkle_proof(
+    async fn build_merkle_proof(
+        state: &web::Data<AppState>,
         client_id: &str,
         batch_id: &str,
         filenames: &[String],
@@ -238,7 +249,8 @@ impl DownloadHandler {
         sorted_filenames.sort();
 
         // Read all files in batch
-        let file_data = BatchStorage::read_batch_files(client_id, batch_id, &sorted_filenames)
+        let file_data = state.storage.read_batch_files(client_id, batch_id, &sorted_filenames)
+            .await
             .map_err(|e| handle_server_error("Failed to read batch files", e))?;
 
         // Build Merkle tree
