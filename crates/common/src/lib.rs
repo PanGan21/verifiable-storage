@@ -19,6 +19,7 @@ pub struct DownloadRequest {
     pub batch_id: String,  // Batch ID this file belongs to
     pub signature: String, // hex-encoded signature
     pub timestamp: u64,    // Timestamp for replay attack prevention
+    pub client_id: String, // Client ID (SHA256 hash of public key) for O(1) key lookup
 }
 
 /// Download response containing file data and Merkle proof

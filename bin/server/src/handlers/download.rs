@@ -21,15 +21,21 @@ pub async fn download(
         req.filename, req.batch_id
     );
 
-    // Verify signature
+    // Verify signature using client_id for O(1) key lookup
     let message = build_message(&req.filename, &req.batch_id, req.timestamp);
     let signature_obj = AuthVerifier::parse_signature(&req.signature)
         .map_err(|e| handle_error("Failed to parse signature", e))?;
 
-    let client_id =
-        AuthVerifier::verify_request_signature_with_stored_keys(&state, &message, &signature_obj)
-            .await
-            .map_err(|e| handle_auth_error("Signature verification failed", e))?;
+    AuthVerifier::verify_request_signature_with_client_id(
+        &state,
+        &req.client_id,
+        &message,
+        &signature_obj,
+    )
+    .await
+    .map_err(|e| handle_auth_error("Signature verification failed", e))?;
+
+    let client_id = req.client_id.clone();
 
     info!(
         "GET /download - Signature verified for client: {}",

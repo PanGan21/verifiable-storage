@@ -105,6 +105,7 @@ fn main() -> anyhow::Result<()> {
                 &filename,
                 &batch_id,
                 &signing_key,
+                &client_id,
                 &root_hash,
                 output_dir.as_ref(),
                 &config.data_dir,

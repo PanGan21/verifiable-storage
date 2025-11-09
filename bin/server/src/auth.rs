@@ -42,33 +42,32 @@ impl AuthVerifier {
         Ok((client_id, is_new))
     }
 
-    pub async fn verify_request_signature_with_stored_keys(
+    /// Verify request signature using client_id for key lookup
+    pub async fn verify_request_signature_with_client_id(
         state: &web::Data<AppState>,
+        client_id: &str,
         message: &[u8],
         signature: &Signature,
-    ) -> Result<String> {
-        let client_ids = state
+    ) -> Result<()> {
+        let public_key_bytes = state
             .storage
-            .list_client_ids()
+            .load_public_key(client_id)
             .await
-            .context("Failed to list client IDs")?;
+            .context("Failed to load public key")?
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Client not found: {}. Client must be registered first (e.g., by uploading files)",
+                    client_id
+                )
+            })?;
 
-        // Try each client's public key to find the one that verifies the signature
-        for client_id in client_ids {
-            if let Some(public_key_bytes) = state
-                .storage
-                .load_public_key(&client_id)
-                .await
-                .context("Failed to load public key")?
-            {
-                let public_key = public_key_from_bytes(&public_key_bytes)
-                    .context("Failed to parse public key")?;
-                if verify_signature(&public_key, message, signature).is_ok() {
-                    return Ok(client_id);
-                }
-            }
-        }
-        anyhow::bail!("Signature verification failed: no matching public key found");
+        let public_key =
+            public_key_from_bytes(&public_key_bytes).context("Failed to parse public key")?;
+
+        verify_signature(&public_key, message, signature)
+            .context("Signature verification failed")?;
+
+        Ok(())
     }
 
     /// Parse signature from hex string

@@ -39,6 +39,7 @@ pub struct FileDownloader {
     server: String,
     batch_id: String,
     signing_key: SigningKey,
+    client_id: String,
     data_dir: PathBuf,
 }
 
@@ -48,12 +49,14 @@ impl FileDownloader {
         server: String,
         batch_id: String,
         signing_key: SigningKey,
+        client_id: String,
         data_dir: PathBuf,
     ) -> Self {
         Self {
             server,
             batch_id,
             signing_key,
+            client_id,
             data_dir,
         }
     }
@@ -127,6 +130,7 @@ impl FileDownloader {
                 ("batch_id", &self.batch_id),
                 ("signature", &signature_hex),
                 ("timestamp", &timestamp.to_string()),
+                ("client_id", &self.client_id),
             ])
             .send()
             .context("Failed to connect to server")?;
@@ -269,6 +273,7 @@ pub fn download_file(
     filename: &str,
     batch_id: &str,
     signing_key: &SigningKey,
+    client_id: &str,
     root_hash: &str,
     output_dir: Option<&PathBuf>,
     data_dir: &PathBuf,
@@ -277,6 +282,7 @@ pub fn download_file(
         server.to_string(),
         batch_id.to_string(),
         signing_key.clone(),
+        client_id.to_string(),
         data_dir.clone(),
     );
     downloader.download_and_verify(filename, root_hash, output_dir)
