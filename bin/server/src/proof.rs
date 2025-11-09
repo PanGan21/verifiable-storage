@@ -64,4 +64,3 @@ pub fn prepare_file_data(file_content: &[u8]) -> (String, String) {
     let file_content_b64 = STANDARD.encode(file_content);
     (file_hash_hex, file_content_b64)
 }
-

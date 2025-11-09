@@ -121,11 +121,11 @@ impl FileUploader {
                     .and_then(|n| n.to_str())
                     .map(|s| s.to_string())
                     .unwrap_or_else(|| path.to_string_lossy().to_string());
-                
+
                 // Validate filename to prevent path traversal attacks
                 file_utils::validate_filename(&filename)
                     .map_err(|e| anyhow::anyhow!("{}: {}", e.message(), filename))?;
-                
+
                 let content =
                     fs::read(&path).with_context(|| format!("Failed to read file: {:?}", path))?;
                 file_list.push((filename, content));

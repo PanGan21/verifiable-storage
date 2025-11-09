@@ -292,7 +292,7 @@ pub fn download_file(
     // Validate filename to prevent path traversal attacks
     file_utils::validate_filename(filename)
         .map_err(|e| anyhow::anyhow!("{}: {}", e.message(), filename))?;
-    
+
     let downloader = FileDownloader::new(
         config.server.clone(),
         config.batch_id.clone(),

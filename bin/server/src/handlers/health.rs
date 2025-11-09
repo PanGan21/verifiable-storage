@@ -7,4 +7,3 @@ pub async fn health() -> ActixResult<HttpResponse> {
         status: "ok".to_string(),
     }))
 }
-
