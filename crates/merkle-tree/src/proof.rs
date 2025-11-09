@@ -55,7 +55,7 @@ impl MerkleProof {
 /// The hashes are concatenated (0x01 || left || right) before hashing.
 fn hash_pair(left: &[u8; 32], right: &[u8; 32]) -> [u8; 32] {
     let mut hasher = sha2::Sha256::new();
-    hasher.update(&[0x01]); // Domain separation prefix for internal nodes
+    hasher.update([0x01]); // Domain separation prefix for internal nodes
     hasher.update(left);
     hasher.update(right);
     hasher.finalize().into()

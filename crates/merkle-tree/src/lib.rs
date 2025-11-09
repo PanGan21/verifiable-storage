@@ -93,7 +93,7 @@ impl MerkleTree {
 
         // Traverse from leaf to root
         for level in 0..(self.levels.len() - 1) {
-            let sibling_index = if current_index % 2 == 0 {
+            let sibling_index = if current_index.is_multiple_of(2) {
                 current_index + 1
             } else {
                 current_index - 1
@@ -159,7 +159,7 @@ impl fmt::Display for MerkleTree {
 /// second-preimage attacks between leaf and internal nodes.
 fn hash_data(data: &[u8]) -> [u8; 32] {
     let mut hasher = Sha256::new();
-    hasher.update(&[0x00]); // Domain separation prefix for leaves
+    hasher.update([0x00]); // Domain separation prefix for leaves
     hasher.update(data);
     hasher.finalize().into()
 }
@@ -170,7 +170,7 @@ fn hash_data(data: &[u8]) -> [u8; 32] {
 /// The hashes are concatenated (0x01 || left || right) before hashing.
 fn hash_pair(left: &[u8; 32], right: &[u8; 32]) -> [u8; 32] {
     let mut hasher = Sha256::new();
-    hasher.update(&[0x01]); // Domain separation prefix for internal nodes
+    hasher.update([0x01]); // Domain separation prefix for internal nodes
     hasher.update(left);
     hasher.update(right);
     hasher.finalize().into()

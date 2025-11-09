@@ -127,10 +127,62 @@ cat client2_data/client2-batch-001/root_hash.txt
 - Clients cannot access each other's files (signature verification ensures isolation)
 - Downloaded files match original files (Merkle proof verification succeeds)
 
+## Development
+
+### Code Quality
+
+The project uses `rustfmt` for code formatting and `clippy` for linting. Configuration files are provided:
+
+- `.rustfmt.toml` - Rustfmt configuration
+- `clippy.toml` - Clippy configuration
+
+#### Format Code
+
+Format all code:
+
+```bash
+cargo fmt
+```
+
+Check formatting without modifying files:
+
+```bash
+cargo fmt -- --check
+```
+
+#### Run Clippy
+
+Run Clippy with strict warnings:
+
+```bash
+cargo clippy --all-targets --all-features -- -D warnings
+```
+
+#### Pre-commit Checks
+
+Run both formatting and Clippy checks:
+
+```bash
+cargo fmt -- --check && cargo clippy --all-targets --all-features -- -D warnings
+```
+
+### Testing
+
+Run all tests:
+
+```bash
+cargo test
+```
+
+Run tests with output:
+
+```bash
+cargo test -- --nocapture
+```
+
 ## Advanced Usage
 
 For detailed configuration options, deployment alternatives (filesystem storage, local database), and advanced usage, see the [Architecture Documentation](docs/architecture.md#deployment).
-
 
 ## Documentation
 

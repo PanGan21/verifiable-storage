@@ -1,0 +1,9 @@
+# Clippy configuration
+# Documentation: https://rust-lang.github.io/rust-clippy/
+
+# Allow some lints that are too strict for this project
+avoid-breaking-exported-api = false
+
+# Performance lints
+cognitive-complexity-threshold = 30
+
