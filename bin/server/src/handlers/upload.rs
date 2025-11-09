@@ -19,6 +19,10 @@ pub async fn upload(
         req.filename, req.batch_id
     );
 
+    // Validate timestamp to prevent replay attacks
+    AuthVerifier::validate_timestamp_default(req.timestamp)
+        .map_err(|e| handle_auth_error("Timestamp validation failed", e))?;
+
     let message = build_message(&req);
     let signature = AuthVerifier::parse_signature(&req.signature)
         .map_err(|e| handle_error("Failed to parse signature", e))?;

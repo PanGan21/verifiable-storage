@@ -1,14 +1,13 @@
+use crate::constants::{FILENAMES_FILE, ROOT_HASH_FILE, UPLOAD_ENDPOINT};
 use anyhow::{Context, Result};
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use common::UploadRequest;
 use crypto::{hash_leaf, sign_message};
 use ed25519_dalek::SigningKey;
-use hex;
 use log::info;
 use merkle_tree::MerkleTree;
 use reqwest::blocking::Client;
-use serde_json;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -52,13 +51,13 @@ pub fn upload_files(
     server: &str,
     batch_id: &str,
     signing_key: &SigningKey,
-    data_dir: &PathBuf,
+    data_dir: &Path,
 ) -> Result<String> {
     let uploader = FileUploader::new(
         server.to_string(),
         batch_id.to_string(),
         signing_key.clone(),
-        data_dir.clone(),
+        data_dir.to_path_buf(),
     );
     uploader.upload_from_directory(dir)
 }
@@ -102,7 +101,7 @@ impl FileUploader {
             "Upload complete! Batch ID: {}, Root hash: {}",
             self.batch_id, root_hash_hex
         );
-        let root_hash_path = self.data_dir.join(&self.batch_id).join("root_hash.txt");
+        let root_hash_path = self.data_dir.join(&self.batch_id).join(ROOT_HASH_FILE);
         println!("Root hash saved to: {}", root_hash_path.display());
 
         Ok(root_hash_hex)
@@ -144,7 +143,7 @@ impl FileUploader {
             let request = self.build_upload_request(filename, content, &public_key_hex)?;
 
             // Send request
-            let url = format!("{}/upload", self.server);
+            let url = format!("{}{}", self.server, UPLOAD_ENDPOINT);
             let response = client
                 .post(&url)
                 .json(&request)
@@ -233,15 +232,16 @@ impl FileUploader {
         fs::create_dir_all(&batch_dir).context("Failed to create batch directory")?;
 
         // Save root hash
-        let root_hash_file = batch_dir.join("root_hash.txt");
-        fs::write(&root_hash_file, root_hash_hex).context("Failed to write root_hash.txt")?;
+        let root_hash_file = batch_dir.join(ROOT_HASH_FILE);
+        fs::write(&root_hash_file, root_hash_hex)
+            .with_context(|| format!("Failed to write {}", ROOT_HASH_FILE))?;
 
         // Save filenames
         let filenames: Vec<String> = file_list
             .iter()
             .map(|(filename, _)| filename.clone())
             .collect();
-        let filenames_file = batch_dir.join("filenames.json");
+        let filenames_file = batch_dir.join(FILENAMES_FILE);
         fs::write(
             &filenames_file,
             serde_json::to_string_pretty(&filenames).context("Failed to serialize filenames")?,

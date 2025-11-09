@@ -1,5 +1,6 @@
 mod auth;
 mod config;
+mod constants;
 mod handlers;
 mod logger;
 mod state;
@@ -39,10 +40,7 @@ async fn main() -> std::io::Result<()> {
             .await
             .map_err(|e| {
                 error!("Failed to initialize database storage: {}", e);
-                std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("Failed to initialize database storage: {}", e),
-                )
+                std::io::Error::other(format!("Failed to initialize database storage: {}", e))
             })?
         }
         config::StorageType::Filesystem => {
@@ -66,10 +64,7 @@ async fn main() -> std::io::Result<()> {
             .await
             .map_err(|e| {
                 error!("Failed to initialize filesystem storage: {}", e);
-                std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("Failed to initialize filesystem storage: {}", e),
-                )
+                std::io::Error::other(format!("Failed to initialize filesystem storage: {}", e))
             })?
         }
     };

@@ -1,7 +1,5 @@
-use std::path::PathBuf;
-
-pub const CLIENT_DATA_DIR: &str = "client_data";
-const KEY_FILE: &str = "keypair.txt";
+use crate::constants::{CLIENT_DATA_DIR, KEY_FILE};
+use std::path::{Path, PathBuf};
 
 /// Client configuration
 #[derive(Debug, Clone)]
@@ -15,8 +13,9 @@ pub struct ClientConfig {
 impl ClientConfig {
     /// Load configuration from environment variables or use defaults
     pub fn load() -> Self {
-        let server_url = std::env::var("CLIENT_SERVER_URL")
-            .unwrap_or_else(|_| "http://127.0.0.1:8080".to_string());
+        use crate::constants::DEFAULT_SERVER_URL;
+        let server_url =
+            std::env::var("CLIENT_SERVER_URL").unwrap_or_else(|_| DEFAULT_SERVER_URL.to_string());
 
         let data_dir = std::env::var("CLIENT_DATA_DIR")
             .map(PathBuf::from)
@@ -37,6 +36,6 @@ impl ClientConfig {
 }
 
 /// Get the path to the keypair file
-pub fn get_key_file_path(data_dir: &PathBuf) -> PathBuf {
+pub fn get_key_file_path(data_dir: &Path) -> PathBuf {
     data_dir.join(KEY_FILE)
 }

@@ -21,6 +21,10 @@ pub async fn download(
         req.filename, req.batch_id
     );
 
+    // Validate timestamp to prevent replay attacks
+    AuthVerifier::validate_timestamp_default(req.timestamp)
+        .map_err(|e| handle_auth_error("Timestamp validation failed", e))?;
+
     // Verify signature using client_id for O(1) key lookup
     let message = build_message(&req.filename, &req.batch_id, req.timestamp);
     let signature_obj = AuthVerifier::parse_signature(&req.signature)

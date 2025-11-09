@@ -1,4 +1,5 @@
 mod config;
+mod constants;
 mod download;
 mod keypair;
 mod logger;
@@ -68,9 +69,10 @@ fn main() -> anyhow::Result<()> {
         return generate_keypair_command(&config.data_dir, *force);
     }
 
+    use crate::constants::CLIENT_ID_FILE;
     let (signing_key, client_id) = get_or_create_keypair(&config.data_dir)?;
 
-    let client_id_file = config.data_dir.join("client_id.txt");
+    let client_id_file = config.data_dir.join(CLIENT_ID_FILE);
     if let Some(parent) = client_id_file.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -100,16 +102,14 @@ fn main() -> anyhow::Result<()> {
                 download::load_root_hash(&batch_id, &config.data_dir)
                     .expect("Failed to load root hash")
             });
-            download::download_file(
-                &server_url,
-                &filename,
-                &batch_id,
-                &signing_key,
-                &client_id,
-                &root_hash,
-                output_dir.as_ref(),
-                &config.data_dir,
-            )?;
+            let download_config = download::DownloadConfig {
+                server: server_url,
+                batch_id,
+                signing_key: signing_key.clone(),
+                client_id: client_id.clone(),
+                data_dir: config.data_dir.clone(),
+            };
+            download::download_file(&download_config, &filename, &root_hash, output_dir.as_ref())?;
         }
     }
 

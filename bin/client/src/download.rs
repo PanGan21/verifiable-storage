@@ -1,14 +1,14 @@
+use crate::constants::{DOWNLOADED_DIR, DOWNLOAD_ENDPOINT, ROOT_HASH_FILE};
 use anyhow::{Context, Result};
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use common::{DownloadResponse, ProofNodeJson};
 use crypto::{hash_leaf, sign_message};
 use ed25519_dalek::SigningKey;
-use hex;
 use merkle_tree::MerkleProof;
 use reqwest::blocking::Client;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Get current timestamp in milliseconds since Unix epoch
 /// Used to ensure each signature is unique, even for identical requests
@@ -32,6 +32,21 @@ fn hex_decode_array<const N: usize>(s: &str) -> Result<[u8; N]> {
     bytes
         .try_into()
         .map_err(|_| anyhow::anyhow!("Failed to convert to array"))
+}
+
+/// Configuration for file downloads
+#[derive(Clone)]
+pub struct DownloadConfig {
+    /// Server URL
+    pub server: String,
+    /// Batch ID
+    pub batch_id: String,
+    /// Signing key for authentication
+    pub signing_key: SigningKey,
+    /// Client ID
+    pub client_id: String,
+    /// Data directory
+    pub data_dir: PathBuf,
 }
 
 /// Handles file downloads and verification
@@ -122,7 +137,7 @@ impl FileDownloader {
 
         // Send request
         let client = Client::new();
-        let url = format!("{}/download", self.server);
+        let url = format!("{}{}", self.server, DOWNLOAD_ENDPOINT);
         let response = client
             .get(&url)
             .query(&[
@@ -252,7 +267,7 @@ impl FileDownloader {
             dir.clone()
         } else {
             // Default: data_dir/{batch_id}/downloaded/
-            self.data_dir.join(&self.batch_id).join("downloaded")
+            self.data_dir.join(&self.batch_id).join(DOWNLOADED_DIR)
         };
 
         // Create output directory if it doesn't exist
@@ -269,37 +284,34 @@ impl FileDownloader {
 
 /// Download and verify a file from the server (convenience function)
 pub fn download_file(
-    server: &str,
+    config: &DownloadConfig,
     filename: &str,
-    batch_id: &str,
-    signing_key: &SigningKey,
-    client_id: &str,
     root_hash: &str,
     output_dir: Option<&PathBuf>,
-    data_dir: &PathBuf,
 ) -> Result<()> {
     let downloader = FileDownloader::new(
-        server.to_string(),
-        batch_id.to_string(),
-        signing_key.clone(),
-        client_id.to_string(),
-        data_dir.clone(),
+        config.server.clone(),
+        config.batch_id.clone(),
+        config.signing_key.clone(),
+        config.client_id.clone(),
+        config.data_dir.clone(),
     );
     downloader.download_and_verify(filename, root_hash, output_dir)
 }
 
 /// Load root hash from file
-pub fn load_root_hash(batch_id: &str, data_dir: &PathBuf) -> Result<String> {
-    let root_hash_file = data_dir.join(batch_id).join("root_hash.txt");
+pub fn load_root_hash(batch_id: &str, data_dir: &Path) -> Result<String> {
+    let root_hash_file = data_dir.join(batch_id).join(ROOT_HASH_FILE);
     if !root_hash_file.exists() {
         anyhow::bail!(
             "Root hash not found for batch {}. \
-            Please provide --root-hash or upload files first to generate root_hash.txt",
-            batch_id
+            Please provide --root-hash or upload files first to generate {}",
+            batch_id,
+            ROOT_HASH_FILE
         );
     }
     let root_hash = fs::read_to_string(&root_hash_file)
-        .context("Failed to read root_hash.txt")?
+        .with_context(|| format!("Failed to read {}", ROOT_HASH_FILE))?
         .trim()
         .to_string();
     Ok(root_hash)

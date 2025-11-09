@@ -34,9 +34,7 @@ impl Metadata {
         let content = tokio::fs::read_to_string(metadata_file)
             .await
             .context("Failed to read metadata")?;
-        serde_json::from_str(&content)
-            .context("Failed to parse metadata")
-            .map_err(Into::into)
+        serde_json::from_str(&content).context("Failed to parse metadata")
     }
 
     /// Insert filename into metadata

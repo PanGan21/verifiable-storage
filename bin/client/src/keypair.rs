@@ -1,17 +1,17 @@
 use crate::config::get_key_file_path;
+use crate::constants::CLIENT_ID_FILE;
 use anyhow::{Context, Result};
 use crypto::{compute_client_id, generate_keypair};
-use hex;
 use log::info;
 use std::fs;
-use std::path::PathBuf;
+use std::path::Path;
 
 /// Manages keypair generation and loading
 pub struct KeypairManager;
 
 impl KeypairManager {
     /// Generate a new keypair
-    pub fn generate_keypair(data_dir: &PathBuf, force: bool) -> Result<()> {
+    pub fn generate_keypair(data_dir: &Path, force: bool) -> Result<()> {
         fs::create_dir_all(data_dir).context("Failed to create client_data directory")?;
 
         let key_file = get_key_file_path(data_dir);
@@ -51,9 +51,7 @@ impl KeypairManager {
     }
 
     /// Get or create keypair
-    pub fn get_or_create_keypair(
-        data_dir: &PathBuf,
-    ) -> Result<(ed25519_dalek::SigningKey, String)> {
+    pub fn get_or_create_keypair(data_dir: &Path) -> Result<(ed25519_dalek::SigningKey, String)> {
         fs::create_dir_all(data_dir).context("Failed to create client_data directory")?;
         let key_file = get_key_file_path(data_dir);
         let (signing_key, _verifying_key, client_id) = crypto::load_or_generate_keypair(&key_file)?;
@@ -61,9 +59,9 @@ impl KeypairManager {
     }
 
     /// Remove existing keypair files
-    fn remove_existing_keypair(data_dir: &PathBuf, key_file: &PathBuf) -> Result<()> {
+    fn remove_existing_keypair(data_dir: &Path, key_file: &Path) -> Result<()> {
         fs::remove_file(key_file)?;
-        let client_id_file = data_dir.join("client_id.txt");
+        let client_id_file = data_dir.join(CLIENT_ID_FILE);
         if client_id_file.exists() {
             fs::remove_file(&client_id_file)?;
         }
@@ -72,7 +70,7 @@ impl KeypairManager {
 
     /// Save keypair to file
     fn save_keypair(
-        key_file: &PathBuf,
+        key_file: &Path,
         signing_key: &ed25519_dalek::SigningKey,
         verifying_key: &ed25519_dalek::VerifyingKey,
     ) -> Result<()> {
@@ -92,8 +90,8 @@ impl KeypairManager {
     }
 
     /// Save client ID to file
-    fn save_client_id(data_dir: &PathBuf, client_id: &str) -> Result<()> {
-        let client_id_file = data_dir.join("client_id.txt");
+    fn save_client_id(data_dir: &Path, client_id: &str) -> Result<()> {
+        let client_id_file = data_dir.join(CLIENT_ID_FILE);
         if let Some(parent) = client_id_file.parent() {
             fs::create_dir_all(parent)?;
         }
@@ -103,11 +101,11 @@ impl KeypairManager {
 }
 
 /// Generate keypair command (convenience function)
-pub fn generate_keypair_command(data_dir: &PathBuf, force: bool) -> Result<()> {
+pub fn generate_keypair_command(data_dir: &Path, force: bool) -> Result<()> {
     KeypairManager::generate_keypair(data_dir, force)
 }
 
 /// Get or create keypair (convenience function)
-pub fn get_or_create_keypair(data_dir: &PathBuf) -> Result<(ed25519_dalek::SigningKey, String)> {
+pub fn get_or_create_keypair(data_dir: &Path) -> Result<(ed25519_dalek::SigningKey, String)> {
     KeypairManager::get_or_create_keypair(data_dir)
 }

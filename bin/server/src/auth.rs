@@ -1,8 +1,10 @@
+use crate::constants::{DEFAULT_MAX_AGE_SECONDS, DEFAULT_MAX_CLOCK_SKEW_SECONDS};
 use crate::state::AppState;
 use actix_web::web;
 use anyhow::{Context, Result};
 use crypto::{compute_client_id, public_key_from_bytes, verify_signature};
 use ed25519_dalek::Signature;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Handles authentication and signature verification
 pub struct AuthVerifier;
@@ -78,5 +80,60 @@ impl AuthVerifier {
             .try_into()
             .map_err(|_| anyhow::anyhow!("Invalid signature length"))?;
         Ok(Signature::from_bytes(&signature_array))
+    }
+
+    /// Validate timestamp to prevent replay attacks
+    /// Checks that the timestamp is within the allowed window (not too old, not too far in future)
+    ///
+    /// # Arguments
+    /// * `request_timestamp_ms` - Timestamp from the request in milliseconds since Unix epoch
+    /// * `max_age_seconds` - Maximum age of the request in seconds (default: 300 = 5 minutes)
+    /// * `max_clock_skew_seconds` - Maximum allowed clock skew in seconds (default: 60 = 1 minute)
+    ///
+    /// # Returns
+    /// * `Ok(())` if timestamp is valid
+    /// * `Err` if timestamp is too old, too far in future, or invalid
+    pub fn validate_timestamp(
+        request_timestamp_ms: u64,
+        max_age_seconds: u64,
+        max_clock_skew_seconds: u64,
+    ) -> Result<()> {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .context("Failed to get current time")?
+            .as_millis() as u64;
+
+        let request_timestamp_seconds = request_timestamp_ms / 1000;
+        let now_seconds = now / 1000;
+
+        // Check if timestamp is too old
+        let age_seconds = now_seconds.saturating_sub(request_timestamp_seconds);
+        if age_seconds > max_age_seconds {
+            anyhow::bail!(
+                "Request timestamp is too old: {} seconds old (max: {} seconds)",
+                age_seconds,
+                max_age_seconds
+            );
+        }
+
+        // Check if timestamp is too far in the future (clock skew)
+        if request_timestamp_seconds > now_seconds + max_clock_skew_seconds {
+            anyhow::bail!(
+                "Request timestamp is too far in the future: {} seconds ahead (max clock skew: {} seconds)",
+                request_timestamp_seconds.saturating_sub(now_seconds),
+                max_clock_skew_seconds
+            );
+        }
+
+        Ok(())
+    }
+
+    /// Validate timestamp with default settings (5 minutes max age, 1 minute clock skew)
+    pub fn validate_timestamp_default(request_timestamp_ms: u64) -> Result<()> {
+        Self::validate_timestamp(
+            request_timestamp_ms,
+            DEFAULT_MAX_AGE_SECONDS,
+            DEFAULT_MAX_CLOCK_SKEW_SECONDS,
+        )
     }
 }

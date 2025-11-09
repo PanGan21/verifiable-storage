@@ -1,3 +1,6 @@
+use crate::constants::{
+    DEFAULT_DATA_DIR, DEFAULT_HOST, DEFAULT_PORT, STORAGE_TYPE_DATABASE, STORAGE_TYPE_FILESYSTEM,
+};
 use clap::{Arg, Command};
 use std::path::PathBuf;
 use storage::DatabaseRetryConfig;
@@ -35,14 +38,14 @@ impl ServerConfig {
                     .long("storage")
                     .value_name("TYPE")
                     .help("Storage backend type: 'fs' for filesystem or 'db' for database")
-                    .default_value("fs"),
+                    .default_value(STORAGE_TYPE_FILESYSTEM),
             )
             .arg(
                 Arg::new("data-dir")
                     .long("data-dir")
                     .value_name("DIR")
                     .help("Data directory for filesystem storage")
-                    .default_value("server_data"),
+                    .default_value(DEFAULT_DATA_DIR),
             )
             .arg(
                 Arg::new("database-url")
@@ -68,16 +71,16 @@ impl ServerConfig {
         let storage_type_str = matches
             .get_one::<String>("storage")
             .map(|s| s.as_str())
-            .unwrap_or("fs");
+            .unwrap_or(STORAGE_TYPE_FILESYSTEM);
         let storage_type = match storage_type_str {
-            "db" => StorageType::Database,
-            "fs" => StorageType::Filesystem,
+            STORAGE_TYPE_DATABASE => StorageType::Database,
+            STORAGE_TYPE_FILESYSTEM => StorageType::Filesystem,
             _ => {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::InvalidInput,
                     format!(
-                        "Invalid storage type: {}. Must be 'fs' or 'db'",
-                        storage_type_str
+                        "Invalid storage type: {}. Must be '{}' or '{}'",
+                        storage_type_str, STORAGE_TYPE_FILESYSTEM, STORAGE_TYPE_DATABASE
                     ),
                 ));
             }
@@ -87,7 +90,7 @@ impl ServerConfig {
             matches
                 .get_one::<String>("data-dir")
                 .map(|s| s.as_str())
-                .unwrap_or("server_data"),
+                .unwrap_or(DEFAULT_DATA_DIR),
         );
 
         let database_url = if storage_type == StorageType::Database {
@@ -114,15 +117,15 @@ impl ServerConfig {
         let host = matches
             .get_one::<String>("host")
             .map(|s| s.as_str())
-            .or_else(|| env_host.as_deref())
-            .unwrap_or("0.0.0.0")
+            .or(env_host.as_deref())
+            .unwrap_or(DEFAULT_HOST)
             .to_string();
 
         let port_str = matches
             .get_one::<String>("port")
             .map(|s| s.as_str())
-            .or_else(|| env_port.as_deref())
-            .unwrap_or("8080");
+            .or(env_port.as_deref())
+            .unwrap_or(DEFAULT_PORT);
 
         let port = port_str.parse().map_err(|_| {
             std::io::Error::new(
