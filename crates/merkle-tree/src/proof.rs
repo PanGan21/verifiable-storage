@@ -12,7 +12,6 @@ pub struct ProofNode {
 }
 
 /// A Merkle proof for a specific leaf node.
-///
 /// The proof contains the leaf hash and a path of sibling hashes
 /// from the leaf to the root, allowing reconstruction of the root hash.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -27,13 +26,8 @@ pub struct MerkleProof {
 
 impl MerkleProof {
     /// Compute the root hash from this proof.
-    ///
     /// This reconstructs the root hash by following the proof path
     /// and hashing pairs of nodes together.
-    ///
-    /// # Returns
-    ///
-    /// * `Result<[u8; 32], MerkleTreeError>` - The computed root hash or an error
     pub fn compute_root(&self) -> Result<[u8; 32], MerkleTreeError> {
         let mut current_hash = self.leaf_hash;
 
@@ -57,7 +51,6 @@ impl MerkleProof {
 }
 
 /// Hash a pair of hashes together (internal node) using SHA-256.
-///
 /// Uses domain separation prefix 0x01 for internal nodes.
 /// The hashes are concatenated (0x01 || left || right) before hashing.
 fn hash_pair(left: &[u8; 32], right: &[u8; 32]) -> [u8; 32] {
@@ -88,4 +81,3 @@ mod tests {
         assert_eq!(proof, deserialized);
     }
 }
-

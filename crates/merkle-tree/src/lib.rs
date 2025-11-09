@@ -14,7 +14,6 @@ pub enum MerkleTreeError {
 }
 
 /// A Merkle tree that can be used to verify data integrity.
-///
 /// The tree is built bottom-up from a collection of data items.
 /// Each leaf node is the hash of a data item, and internal nodes
 /// are hashes of their children.
@@ -27,28 +26,8 @@ pub struct MerkleTree {
 
 impl MerkleTree {
     /// Build a Merkle tree from a collection of data items.
-    ///
     /// Each item is hashed to create a leaf node. If there's an odd number
     /// of nodes at any level, the last node is duplicated.
-    ///
-    /// # Arguments
-    ///
-    /// * `data` - A slice of byte slices, where each byte slice represents a file or data item
-    ///
-    /// # Returns
-    ///
-    /// * `Result<MerkleTree, MerkleTreeError>` - The constructed Merkle tree or an error
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// use merkle_tree::MerkleTree;
-    ///
-    /// let data = vec![b"file1".to_vec(), b"file2".to_vec(), b"file3".to_vec()];
-    /// let tree = MerkleTree::from_data(&data)?;
-    /// let root = tree.root_hash();
-    /// # Ok::<(), merkle_tree::MerkleTreeError>(())
-    /// ```
     pub fn from_data(data: &[Vec<u8>]) -> Result<Self, MerkleTreeError> {
         if data.is_empty() {
             return Err(MerkleTreeError::EmptyData);
@@ -102,28 +81,8 @@ impl MerkleTree {
     }
 
     /// Generate a Merkle proof for the leaf at the given index.
-    ///
     /// A Merkle proof consists of sibling hashes along the path from
     /// the leaf to the root, along with their positions (left or right).
-    ///
-    /// # Arguments
-    ///
-    /// * `leaf_index` - The index of the leaf node (0-based)
-    ///
-    /// # Returns
-    ///
-    /// * `Result<MerkleProof, MerkleTreeError>` - The proof or an error
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// use merkle_tree::MerkleTree;
-    ///
-    /// let data = vec![b"file1".to_vec(), b"file2".to_vec(), b"file3".to_vec()];
-    /// let tree = MerkleTree::from_data(&data)?;
-    /// let proof = tree.generate_proof(1)?;
-    /// # Ok::<(), merkle_tree::MerkleTreeError>(())
-    /// ```
     pub fn generate_proof(&self, leaf_index: usize) -> Result<MerkleProof, MerkleTreeError> {
         if leaf_index >= self.leaves.len() {
             return Err(MerkleTreeError::InvalidLeafIndex(leaf_index));
@@ -169,50 +128,16 @@ impl MerkleTree {
     }
 
     /// Verify a Merkle proof against the stored root hash.
-    ///
     /// This reconstructs the root hash from the proof and compares it
     /// with the stored root hash.
-    ///
-    /// # Arguments
-    ///
-    /// * `proof` - The Merkle proof to verify
-    ///
-    /// # Returns
-    ///
-    /// * `Result<bool, MerkleTreeError>` - True if the proof is valid, false otherwise
     pub fn verify_proof(&self, proof: &MerkleProof) -> Result<bool, MerkleTreeError> {
         let computed_root = proof.compute_root()?;
         Ok(computed_root == self.root)
     }
 
     /// Verify a Merkle proof given only the root hash.
-    ///
-    /// This is a static method that can be used when you only have the root hash
-    /// and a proof, without the full tree.
-    ///
-    /// # Arguments
-    ///
-    /// * `root_hash` - The expected root hash
-    /// * `proof` - The Merkle proof to verify
-    ///
-    /// # Returns
-    ///
-    /// * `Result<bool, MerkleTreeError>` - True if the proof is valid, false otherwise
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// use merkle_tree::{MerkleTree, MerkleProof};
-    ///
-    /// let data = vec![b"file1".to_vec(), b"file2".to_vec()];
-    /// let tree = MerkleTree::from_data(&data)?;
-    /// let root = tree.root_hash();
-    /// let proof = tree.generate_proof(0)?;
-    ///
-    /// // Later, verify with just the root and proof
-    /// let is_valid = MerkleTree::verify_proof_with_root(&root, &proof)?;
-    /// # Ok::<(), merkle_tree::MerkleTreeError>(())
-    /// ```
+    /// This is a static method that can be used when only the root hash
+    /// and a proof are provided, without the full tree.
     pub fn verify_proof_with_root(
         root_hash: &[u8; 32],
         proof: &MerkleProof,
