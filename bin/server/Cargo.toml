@@ -1,0 +1,27 @@
+[package]
+name = "server"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "server"
+path = "src/main.rs"
+
+[dependencies]
+actix-web = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+hex = { workspace = true }
+base64 = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+ed25519-dalek = { workspace = true }
+sha2 = { workspace = true }
+uuid = { workspace = true }
+
+merkle-tree = { path = "../../crates/merkle-tree" }
+crypto = { path = "../../crates/crypto" }
+common = { path = "../../crates/common" }
+
