@@ -1,4 +1,4 @@
-# Architecture & Implementation Report
+# Architecture & Implementation Documentation
 
 ## Overview
 
@@ -8,7 +8,8 @@ This document describes the architecture, design decisions, and implementation o
 
 ### Problem Statement
 
-The challenge requires:
+The system requirements are:
+
 1. Client uploads a set of files {F0, F1, ..., Fn} to a server
 2. Client deletes local copies after upload
 3. Client can later download arbitrary file Fi with Merkle proof Pi
@@ -19,6 +20,7 @@ The challenge requires:
 **Merkle Tree Approach**: Use a Merkle tree where each leaf represents a file hash. The client computes the root hash after uploading all files and stores it locally. When downloading a file, the server provides the file and a Merkle proof (sibling hashes along the path to root). The client reconstructs the root hash from the proof and compares it with the stored root.
 
 **Key Design Principles**:
+
 - **Cryptographic Security**: Use Ed25519 for authentication, SHA-256 for hashing
 - **Minimal Client Storage**: Client only stores root hash (32 bytes)
 - **Server Efficiency**: Server builds tree on-demand (no tree storage overhead)
@@ -39,6 +41,7 @@ The challenge requires:
 ### 1. Merkle Tree Implementation
 
 The custom Merkle tree implementation is clean and efficient:
+
 - Domain separation (0x00 for leaves, 0x01 for internal nodes) prevents attacks
 - Efficient proof generation (O(log n) space complexity)
 - Handles odd numbers of files correctly (duplicates last node)
@@ -47,6 +50,7 @@ The custom Merkle tree implementation is clean and efficient:
 ### 2. Storage Abstraction
 
 The `Storage` trait allows easy switching between filesystem and database backends:
+
 - Filesystem good for development and single-instance deployments
 - Database enables horizontal scaling and production use
 - Clean interface makes testing easier
@@ -54,6 +58,7 @@ The `Storage` trait allows easy switching between filesystem and database backen
 ### 3. Authentication Design
 
 Ed25519 signature-based authentication:
+
 - Fast signature generation and verification
 - Small key and signature sizes
 - Client ID derived from public key (prevents spoofing)
@@ -62,6 +67,7 @@ Ed25519 signature-based authentication:
 ### 4. Code Organization
 
 Clean code structure:
+
 - Modular design (separate crates for crypto, merkle-tree, storage, common)
 - Handler-based server architecture
 - Error handling with proper context
@@ -70,17 +76,18 @@ Clean code structure:
 ### 5. Production Readiness
 
 Several production-ready features:
+
 - Docker Compose setup
 - Database connection retry logic
 - Configuration via environment variables
 - Health check endpoint
 - Structured logging
 
-## Challenges & Limitations
+## Limitations
 
 ### 1. Performance
 
-**Challenge**: Server must rebuild Merkle tree on every download request.
+**Limitation**: Server must rebuild Merkle tree on every download request.
 
 **Impact**: For large batches (thousands of files), tree building becomes expensive.
 
@@ -88,7 +95,7 @@ Several production-ready features:
 
 ### 2. File Deletion
 
-**Challenge**: Task requires clients to delete local copies after upload.
+**Note**: Clients are expected to delete local copies after upload.
 
 **Approach**: File deletion is left to the user after verifying upload success. The client saves the root hash and filenames, allowing the user to safely delete files knowing they can be recovered with proofs.
 
@@ -96,7 +103,7 @@ Several production-ready features:
 
 ### 3. Replay Attacks
 
-**Challenge**: No protection against replay attacks.
+**Limitation**: No protection against replay attacks.
 
 **Current State**: Timestamps included in signatures but not validated.
 
@@ -106,7 +113,7 @@ Several production-ready features:
 
 ### 4. Batch Size Limits
 
-**Challenge**: No limit on batch size.
+**Limitation**: No limit on batch size.
 
 **Impact**: Very large batches could cause memory issues or timeouts.
 
@@ -114,13 +121,13 @@ Several production-ready features:
 
 ### 5. Concurrent Uploads
 
-**Challenge**: Files uploaded sequentially.
+**Limitation**: Files uploaded sequentially.
 
 **Impact**: Slow upload for many files.
 
 **Solution**: Implement parallel uploads. Not implemented due to complexity.
 
-## Task Requirements Verification
+## Requirements Verification
 
 ✅ **Merkle Tree Implementation**: Custom implementation (not using library)  
 ✅ **Single Root Hash Storage**: Root hash stored in `client_data/{batch_id}/root_hash.txt`  
@@ -130,7 +137,7 @@ Several production-ready features:
 ✅ **Networking**: HTTP REST API, works across multiple machines  
 ✅ **Production-Ready**: Docker support, database backend, error handling, logging  
 ✅ **Docker Compose Demo**: `docker-compose.yml` provided  
-✅ **Report**: This document serves as the report
+✅ **Documentation**: Comprehensive architecture and implementation documentation
 
 ## Core Components
 
@@ -193,12 +200,14 @@ Several production-ready features:
 **Decision**: Use Merkle trees to prove file integrity without storing full tree on server.
 
 **Rationale**:
+
 - Client only needs to store root hash (32 bytes)
 - Server builds tree on-demand (no storage overhead)
 - Proofs are compact (log(n) nodes for n files)
 - Cryptographically secure (any tampering detected)
 
 **Trade-offs**:
+
 - Server must rebuild tree on each download (acceptable for read-heavy workloads)
 - Proof size grows logarithmically with batch size (acceptable for typical batch sizes)
 
@@ -207,12 +216,14 @@ Several production-ready features:
 **Decision**: Use Ed25519 for request authentication.
 
 **Rationale**:
+
 - Fast signature generation and verification
 - Small key and signature sizes (32 bytes key, 64 bytes signature)
 - Cryptographically secure
 - Standard library support (ed25519_dalek)
 
 **Trade-offs**:
+
 - No replay attack protection (timestamps included but not validated)
 - Public keys stored on server (acceptable for this use case)
 
@@ -221,12 +232,14 @@ Several production-ready features:
 **Decision**: Derive client ID from public key (`SHA256(public_key)`).
 
 **Rationale**:
+
 - Prevents client ID spoofing
 - Deterministic (same key = same ID)
 - No server-side client registration needed
 - Auto-registration on first upload
 
 **Trade-offs**:
+
 - Client ID cannot be changed without new keypair
 - Public keys must be stored (acceptable for authentication)
 
@@ -235,12 +248,14 @@ Several production-ready features:
 **Decision**: Organize files by batch_id within client_id.
 
 **Rationale**:
+
 - Clear isolation between upload sessions
 - Easy to manage groups of files
 - Supports future batch operations (delete, list)
 - Metadata tracks filenames per batch
 
 **Trade-offs**:
+
 - Batch ID chosen by client (must be unique per client)
 - No automatic batch expiration
 
@@ -249,12 +264,14 @@ Several production-ready features:
 **Decision**: Store files by original filename, not content hash.
 
 **Rationale**:
+
 - Client requests files by filename
 - Simpler API (no hash lookups)
 - Supports multiple files with same content
 - Direct file access
 
 **Trade-offs**:
+
 - No deduplication (same file uploaded multiple times = multiple copies)
 - Filename must be unique within batch
 
@@ -263,12 +280,14 @@ Several production-ready features:
 **Decision**: Abstract storage behind `Storage` trait with filesystem and database implementations.
 
 **Rationale**:
+
 - Easy to switch backends
 - Database enables horizontal scaling
 - Filesystem good for development/single-instance
 - Testable (mock storage for tests)
 
 **Trade-offs**:
+
 - Some complexity in abstraction layer
 - Database requires PostgreSQL (not SQLite for production)
 
@@ -277,12 +296,14 @@ Several production-ready features:
 **Decision**: Build Merkle tree on server only when generating proof.
 
 **Rationale**:
+
 - No storage overhead for tree structure
 - Tree only needed for proofs
 - Files can be added to batch without rebuilding tree
 - Simplifies storage backend
 
 **Trade-offs**:
+
 - Performance cost on download (must read all files in batch)
 - Acceptable for read-heavy workloads with small batches
 
@@ -291,6 +312,7 @@ Several production-ready features:
 **Decision**: Use different prefixes for leaf nodes (0x00) and internal nodes (0x01).
 
 **Rationale**:
+
 - Prevents second-preimage attacks
 - Security best practice for Merkle trees
 - Minimal performance impact
@@ -333,6 +355,7 @@ struct ProofNode {
 ### Storage Structure
 
 **Filesystem:**
+
 ```
 server_data/
     {client_id}/
@@ -343,6 +366,7 @@ server_data/
 ```
 
 **Database:**
+
 - `clients`: client_id, public_key
 - `batches`: client_id, batch_id
 - `files`: client_id, batch_id, filename, content
@@ -420,22 +444,26 @@ Given more time, the following improvements would be prioritized:
 ### 1. Performance Optimizations (High Priority)
 
 **Merkle Tree Caching**:
+
 - Cache Merkle trees per batch in memory or Redis
 - Invalidate cache when new files are uploaded to batch
 - Reduces tree building time from O(n) to O(1) for cached batches
 - Estimated impact: 10-100x speedup for repeated downloads
 
 **Parallel File Upload**:
+
 - Upload multiple files concurrently (e.g., 10 concurrent uploads)
 - Use async/await with tokio for non-blocking I/O
 - Estimated impact: 5-10x faster upload for large batches
 
 **Proof Caching**:
+
 - Cache proofs for recently downloaded files (LRU cache)
 - Useful when same file is downloaded multiple times
 - Estimated impact: Eliminates tree building for cached proofs
 
 **Batch Size Limits**:
+
 - Configurable maximum files per batch (e.g., 10,000 files)
 - Prevents memory issues and timeouts
 - Client validation before upload
@@ -443,21 +471,25 @@ Given more time, the following improvements would be prioritized:
 ### 2. Security Enhancements (High Priority)
 
 **Replay Attack Prevention**:
+
 - Validate timestamps (reject requests older than 5 minutes)
 - Use nonces stored in database (one-time use)
 - Estimated effort: 2-4 hours
 
 **HTTPS/TLS**:
+
 - Add TLS support to server (Let's Encrypt certificates)
 - Encrypt traffic between client and server
 - Essential for production deployment
 
 **File Encryption**:
+
 - Encrypt files at rest (AES-256)
 - Client-side encryption before upload
 - Server never sees plaintext files
 
 **Rate Limiting**:
+
 - Limit requests per client per minute
 - Protect against DoS attacks
 - Use token bucket algorithm
@@ -465,21 +497,25 @@ Given more time, the following improvements would be prioritized:
 ### 3. Feature Additions (Medium Priority)
 
 **File Deletion**:
+
 - Add DELETE endpoint with signature
 - Store deletion proof (Merkle proof of deletion)
 - Allow client to verify file was deleted
 
 **Batch Operations**:
+
 - List all batches for a client
 - Get batch metadata (file count, total size, creation date)
 - Delete entire batch
 
 **Key Rotation**:
+
 - Allow clients to rotate keys
 - Migrate files from old key to new key
 - Maintain backward compatibility
 
 **Monitoring & Observability**:
+
 - Prometheus metrics (request rate, latency, error rate)
 - Distributed tracing (Jaeger)
 - Structured logging with correlation IDs
@@ -488,16 +524,19 @@ Given more time, the following improvements would be prioritized:
 ### 4. Storage Optimizations (Medium Priority)
 
 **Deduplication**:
+
 - Store files by content hash
 - Reference files by hash in metadata
 - Significant storage savings for duplicate files
 
 **Compression**:
+
 - Compress files before storage (gzip, zstd)
 - Transparent to client (server handles compression)
 - Reduces storage and bandwidth
 
 **Versioning**:
+
 - Support multiple versions of same file
 - Store version history
 - Allow downloading specific version
@@ -505,16 +544,19 @@ Given more time, the following improvements would be prioritized:
 ### 5. Architecture Improvements (Low Priority)
 
 **Event Sourcing**:
+
 - Store upload/download events
 - Rebuild state from events
 - Provides audit trail
 
 **CQRS**:
+
 - Separate read/write models
 - Optimize read model for queries
 - Optimize write model for updates
 
 **Microservices**:
+
 - Split into upload service, download service, storage service
 - Better scalability and fault isolation
 - More complex deployment
@@ -547,7 +589,8 @@ Server runs on port 8080 with PostgreSQL database. Environment variables configu
 
 ## Conclusion
 
-The verifiable storage system successfully implements the challenge requirements:
+The verifiable storage system successfully implements all requirements:
+
 - ✅ Custom Merkle tree implementation
 - ✅ Client uploads files and stores root hash
 - ✅ Client can download arbitrary file with proof
@@ -634,4 +677,3 @@ Client                          Server
 ```
 
 Proof for File0: [Hash1, Hash23] (siblings along path to root)
-
