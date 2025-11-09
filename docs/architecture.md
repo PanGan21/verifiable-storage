@@ -104,6 +104,81 @@ Files uploaded sequentially. Future improvement: parallel uploads with bounded c
 - **Database**: PostgreSQL with tables for clients, batches, files, and metadata
 - **Abstraction**: `Storage` trait allows switching backends
 
+## Diagrams
+
+### System Architecture
+
+```
+┌─────────┐         ┌─────────┐
+│ Client  │────────▶│ Server  │
+│         │◀────────│         │
+└─────────┘         └─────────┘
+                         │
+                         ▼
+                   ┌─────────┐
+                   │ Storage │
+                   │ Backend │
+                   └─────────┘
+                         │
+            ┌────────────┴────────────┐
+            ▼                         ▼
+      ┌──────────┐             ┌──────────┐
+      │Filesystem│             │Database  │
+      └──────────┘             └──────────┘
+```
+
+### Upload Flow
+
+```
+Client                          Server
+  │                               │
+  ├─ Read files                   │
+  ├─ Build Merkle tree            │
+  ├─ Compute root hash            │
+  │                               │
+  ├─ Sign request ───────────────▶│
+  │                               ├─ Verify signature
+  │                               ├─ Store file
+  │                               ├─ Update metadata
+  │◀────────────── 200 OK ────────┤
+  │                               │
+  ├─ Save root hash               │
+  │                               │
+```
+
+### Download Flow
+
+```
+Client                          Server
+  │                               │
+  ├─ Load root hash               │
+  ├─ Sign request ───────────────▶│
+  │                               ├─ Verify signature
+  │                               ├─ Load batch metadata
+  │                               ├─ Read all files
+  │                               ├─ Build Merkle tree
+  │                               ├─ Generate proof
+  │◀────── File + Proof ──────────┤
+  │                               │
+  ├─ Verify proof                 │
+  ├─ Save file                    │
+  │                               │
+```
+
+### Merkle Tree Structure
+
+```
+                    Root
+                   /    \
+              Hash01    Hash23
+              /   \      /   \
+          Hash0  Hash1 Hash2 Hash3
+            │      │     │     │
+          File0  File1 File2 File3
+```
+
+Proof for File0: [Hash1, Hash23] (siblings along path to root)
+
 ## System Flow
 
 ### Upload Flow
@@ -156,7 +231,11 @@ Use Ed25519 for request authentication. Fast verification, small key/signature s
 
 ### 3. Client ID Derivation
 
-Derive client ID from public key (`SHA256(public_key)`). Prevents spoofing, deterministic, enables auto-registration.
+Derive client ID from public key (`SHA256(public_key)`). This design prevents users from uploading files to other users' batches, which would break Merkle proofs.
+
+**Security Rationale**: If a user could upload files to another user's batch, the Merkle tree would include files from multiple clients. When the original client downloads a file and verifies the proof against their stored root hash, the proof would fail because the tree structure has changed (files from different clients have different hashes and would produce a different root). By deriving client ID from the public key and enforcing that all uploads to a batch must be signed by the same key, we ensure batch integrity: all files in a batch belong to the same client who computed the original root hash.
+
+**Additional Benefits**: Prevents client ID spoofing, deterministic (same key = same ID), enables auto-registration.
 
 **Trade-off**: Client ID cannot be changed without new keypair.
 
@@ -389,79 +468,3 @@ Server configuration via environment variables:
 3. Set up monitoring and health checks
 4. Use connection pooling for database
 5. Regular backups of database and filesystem storage
-
-
-## Diagrams
-
-### System Architecture
-
-```
-┌─────────┐         ┌─────────┐
-│ Client  │────────▶│ Server  │
-│         │◀────────│         │
-└─────────┘         └─────────┘
-                         │
-                         ▼
-                   ┌─────────┐
-                   │ Storage │
-                   │ Backend │
-                   └─────────┘
-                         │
-            ┌────────────┴────────────┐
-            ▼                         ▼
-      ┌──────────┐             ┌──────────┐
-      │Filesystem│             │Database  │
-      └──────────┘             └──────────┘
-```
-
-### Upload Flow
-
-```
-Client                          Server
-  │                               │
-  ├─ Read files                   │
-  ├─ Build Merkle tree            │
-  ├─ Compute root hash            │
-  │                               │
-  ├─ Sign request ───────────────▶│
-  │                               ├─ Verify signature
-  │                               ├─ Store file
-  │                               ├─ Update metadata
-  │◀────────────── 200 OK ────────┤
-  │                               │
-  ├─ Save root hash               │
-  │                               │
-```
-
-### Download Flow
-
-```
-Client                          Server
-  │                               │
-  ├─ Load root hash               │
-  ├─ Sign request ───────────────▶│
-  │                               ├─ Verify signature
-  │                               ├─ Load batch metadata
-  │                               ├─ Read all files
-  │                               ├─ Build Merkle tree
-  │                               ├─ Generate proof
-  │◀────── File + Proof ──────────┤
-  │                               │
-  ├─ Verify proof                 │
-  ├─ Save file                    │
-  │                               │
-```
-
-### Merkle Tree Structure
-
-```
-                    Root
-                   /    \
-              Hash01    Hash23
-              /   \      /   \
-          Hash0  Hash1 Hash2 Hash3
-            │      │     │     │
-          File0  File1 File2 File3
-```
-
-Proof for File0: [Hash1, Hash23] (siblings along path to root)

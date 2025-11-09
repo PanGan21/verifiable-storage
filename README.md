@@ -26,7 +26,7 @@ docker compose up --build
 
 The server will be available at `http://localhost:8080` with PostgreSQL database storage.
 
-For other deployment options (filesystem storage, local development), see the [Architecture Documentation](docs/architecture.md#deployment).
+For other deployment options (filesystem storage, local development), see the [Architecture Documentation](docs/architecture.md).
 
 ## Quick Demo
 
