@@ -1,0 +1,15 @@
+target/
+client_data/
+server_data/
+test_files/
+*.log
+.git/
+.gitignore
+README.md
+INSTRUCTIONS.md
+*.md
+.DS_Store
+*.swp
+*.swo
+*~
+

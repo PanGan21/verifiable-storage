@@ -52,6 +52,20 @@ async fn main() -> std::io::Result<()> {
                 .value_name("URL")
                 .help("Database URL for database storage (can also use DATABASE_URL env var)"),
         )
+        .arg(
+            Arg::new("port")
+                .long("port")
+                .value_name("PORT")
+                .help("Server port (default: 8080)")
+                .default_value("8080"),
+        )
+        .arg(
+            Arg::new("host")
+                .long("host")
+                .value_name("HOST")
+                .help("Server host (default: 0.0.0.0)")
+                .default_value("0.0.0.0"),
+        )
         .get_matches();
 
     // Initialize storage backend
@@ -101,7 +115,18 @@ async fn main() -> std::io::Result<()> {
     // Initialize application state
     let state = web::Data::new(AppState::new(storage));
 
-    info!("Starting server on http://127.0.0.1:8080");
+    // Get host and port from command line arguments
+    let host = matches
+        .get_one::<String>("host")
+        .map(|s| s.as_str())
+        .unwrap_or("0.0.0.0");
+    let port = matches
+        .get_one::<String>("port")
+        .map(|s| s.as_str())
+        .unwrap_or("8080");
+    let bind_address = format!("{}:{}", host, port);
+
+    info!("Starting server on http://{}", bind_address);
 
     HttpServer::new(move || {
         App::new()
@@ -110,7 +135,7 @@ async fn main() -> std::io::Result<()> {
             .service(handlers::download)
             .service(handlers::health)
     })
-    .bind("127.0.0.1:8080")?
+    .bind(&bind_address)?
     .workers(1) // Use single worker to reduce shutdown logs
     .run()
     .await
