@@ -15,7 +15,10 @@ use tracing::{error, info};
 async fn main() -> std::io::Result<()> {
     init_logger();
 
-    info!("Starting verifiable storage server (PID: {})", std::process::id());
+    info!(
+        "Starting verifiable storage server (PID: {})",
+        std::process::id()
+    );
 
     let config = ServerConfig::load()?;
 

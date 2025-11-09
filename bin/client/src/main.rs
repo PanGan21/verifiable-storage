@@ -97,7 +97,8 @@ fn main() -> anyhow::Result<()> {
         } => {
             let server_url = config.get_server_url(server.as_deref());
             let root_hash = root_hash.unwrap_or_else(|| {
-                download::load_root_hash(&batch_id, &config.data_dir).expect("Failed to load root hash")
+                download::load_root_hash(&batch_id, &config.data_dir)
+                    .expect("Failed to load root hash")
             });
             download::download_file(
                 &server_url,
