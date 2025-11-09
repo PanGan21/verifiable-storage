@@ -3,11 +3,13 @@
 mod config;
 mod download;
 mod keypair;
+mod logger;
 mod upload;
 
 use clap::{Parser, Subcommand};
-use config::CLIENT_DATA_DIR;
+use config::ClientConfig;
 use keypair::{generate_keypair_command, get_or_create_keypair};
+use logger::init as init_logger;
 use std::fs;
 use std::path::PathBuf;
 
@@ -32,9 +34,9 @@ enum Commands {
         /// Directory containing files
         #[arg(short, long)]
         dir: PathBuf,
-        /// Server URL
-        #[arg(short, long, default_value = "http://127.0.0.1:8080")]
-        server: String,
+        /// Server URL (defaults to CLIENT_SERVER_URL env var or http://127.0.0.1:8080)
+        #[arg(short, long)]
+        server: Option<String>,
         /// Batch ID for this upload (all files in this upload belong to the same batch)
         #[arg(short, long)]
         batch_id: String,
@@ -46,9 +48,9 @@ enum Commands {
             /// Batch ID this file belongs to
             #[arg(short, long)]
             batch_id: String,
-            /// Server URL
-            #[arg(short, long, default_value = "http://127.0.0.1:8080")]
-            server: String,
+            /// Server URL (defaults to CLIENT_SERVER_URL env var or http://127.0.0.1:8080)
+            #[arg(short, long)]
+            server: Option<String>,
             /// Root hash to verify against (if not provided, loads from client_data/{batch_id}/root_hash.txt)
             #[arg(short, long)]
             root_hash: Option<String>,
@@ -59,9 +61,11 @@ enum Commands {
 }
 
 fn main() -> anyhow::Result<()> {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    // Initialize logger
+    init_logger();
 
     let cli = Cli::parse();
+    let config = ClientConfig::load();
 
     // Handle generate-keypair command separately (doesn't need existing keypair)
     if let Commands::GenerateKeypair { force } = &cli.command {
@@ -72,7 +76,7 @@ fn main() -> anyhow::Result<()> {
     let (signing_key, client_id) = get_or_create_keypair()?;
 
     // Save client ID to file for easy access
-    let client_id_file = PathBuf::from(CLIENT_DATA_DIR).join("client_id.txt");
+    let client_id_file = config.data_dir.join("client_id.txt");
     if let Some(parent) = client_id_file.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -87,7 +91,8 @@ fn main() -> anyhow::Result<()> {
             server,
             batch_id,
         } => {
-            upload::upload_files(&dir, &server, &batch_id, &signing_key)?;
+            let server_url = config.get_server_url(server.as_deref());
+            upload::upload_files(&dir, &server_url, &batch_id, &signing_key)?;
         }
         Commands::Download {
             filename,
@@ -96,12 +101,13 @@ fn main() -> anyhow::Result<()> {
             root_hash,
             output_dir,
         } => {
+            let server_url = config.get_server_url(server.as_deref());
             // Load root hash from file if not provided
             let root_hash = root_hash.unwrap_or_else(|| {
                 download::load_root_hash(&batch_id).expect("Failed to load root hash")
             });
             download::download_file(
-                &server,
+                &server_url,
                 &filename,
                 &batch_id,
                 &signing_key,
