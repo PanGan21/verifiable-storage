@@ -24,7 +24,7 @@ The system requirements are:
 - **Cryptographic Security**: Use Ed25519 for authentication, SHA-256 for hashing
 - **Minimal Client Storage**: Client only stores root hash (32 bytes)
 - **Server Efficiency**: Server builds tree on-demand (no tree storage overhead)
-- **Production-Ready**: Support multiple storage backends, error handling, logging
+- **Multiple storage support**: Support multiple storage backends, error handling, logging
 - **Scalability**: Database backend enables horizontal scaling
 
 ### Implementation Highlights
@@ -36,7 +36,7 @@ The system requirements are:
 5. **Network Protocol**: HTTP REST API for client-server communication
 6. **Docker Support**: Docker Compose setup for easy deployment
 
-## What Went Well
+## Key Features
 
 ### 1. Merkle Tree Implementation
 
@@ -52,7 +52,7 @@ The custom Merkle tree implementation is clean and efficient:
 The `Storage` trait allows easy switching between filesystem and database backends:
 
 - Filesystem good for development and single-instance deployments
-- Database enables horizontal scaling and production use
+- Database enables horizontal scaling
 - Clean interface makes testing easier
 
 ### 3. Authentication Design
@@ -64,18 +64,9 @@ Ed25519 signature-based authentication:
 - Client ID derived from public key (prevents spoofing)
 - Auto-registration simplifies client setup
 
-### 4. Code Organization
+### 4. Setup
 
-Clean code structure:
-
-- Modular design (separate crates for crypto, merkle-tree, storage, common)
-- Handler-based server architecture
-- Error handling with proper context
-- Structured logging with tracing
-
-### 5. Production Readiness
-
-Several production-ready features:
+The setup is as following:
 
 - Docker Compose setup
 - Database connection retry logic
@@ -93,15 +84,7 @@ Several production-ready features:
 
 **Solution**: Could cache trees per batch (invalidate on upload). Not implemented due to time constraints.
 
-### 2. File Deletion
-
-**Note**: Clients are expected to delete local copies after upload.
-
-**Approach**: File deletion is left to the user after verifying upload success. The client saves the root hash and filenames, allowing the user to safely delete files knowing they can be recovered with proofs.
-
-**Note**: Automatic deletion could be added as an option, but manual deletion is safer (user can verify upload first).
-
-### 3. Replay Attacks
+### 2. Replay Attacks
 
 **Limitation**: No protection against replay attacks.
 
@@ -111,7 +94,7 @@ Several production-ready features:
 
 **Solution**: Add timestamp validation or use nonces. Not implemented due to time constraints.
 
-### 4. Batch Size Limits
+### 3. Batch Size Limits
 
 **Limitation**: No limit on batch size.
 
@@ -119,25 +102,13 @@ Several production-ready features:
 
 **Solution**: Add configurable batch size limits. Not implemented.
 
-### 5. Concurrent Uploads
+### 4. Concurrent Uploads
 
 **Limitation**: Files uploaded sequentially.
 
 **Impact**: Slow upload for many files.
 
 **Solution**: Implement parallel uploads. Not implemented due to complexity.
-
-## Requirements Verification
-
-✅ **Merkle Tree Implementation**: Custom implementation (not using library)  
-✅ **Single Root Hash Storage**: Root hash stored in `client_data/{batch_id}/root_hash.txt`  
-✅ **Arbitrary File Download**: Client can download any file by filename with proof  
-✅ **Proof Verification**: Client verifies proof against stored root hash  
-✅ **Rust Programming Language**: Entire system implemented in Rust  
-✅ **Networking**: HTTP REST API, works across multiple machines  
-✅ **Production-Ready**: Docker support, database backend, error handling, logging  
-✅ **Docker Compose Demo**: `docker-compose.yml` provided  
-✅ **Documentation**: Comprehensive architecture and implementation documentation
 
 ## Core Components
 
@@ -289,7 +260,7 @@ Several production-ready features:
 **Trade-offs**:
 
 - Some complexity in abstraction layer
-- Database requires PostgreSQL (not SQLite for production)
+- Database requires PostgreSQL
 
 ### 7. On-Demand Tree Building
 
@@ -434,7 +405,7 @@ server_data/
 
 - **Multiple Instances**: Can run multiple server instances
 - **Shared State**: Database provides shared storage
-- **Use Case**: Production, horizontal scaling
+- **Use Case**: Horizontal scaling
 - **Considerations**: Database connection pooling, query optimization
 
 ## Future Improvements
@@ -630,7 +601,6 @@ cargo run --release --bin server -- --storage db
 
 **Use Cases for Database Storage:**
 
-- Production deployments
 - Horizontal scaling (multiple server instances)
 - Shared state across server instances
 - Better performance for large datasets
@@ -662,10 +632,9 @@ The verifiable storage system successfully implements all requirements:
 - ✅ Client can download arbitrary file with proof
 - ✅ Client verifies proof against stored root hash
 - ✅ Networking across multiple machines
-- ✅ Production-ready with Docker support
 - ✅ Clean, modular code architecture
 
-The system balances simplicity with security, using well-established cryptographic primitives. Key strengths include the custom Merkle tree implementation, storage abstraction, and production-ready features like Docker support and database backend.
+The system balances simplicity with security, using well-established cryptographic primitives. Key strengths include the custom Merkle tree implementation, storage abstraction, and networking features like Docker support and database backend.
 
 Main limitations are performance (no caching), security (no replay protection), and features (no file deletion endpoint). These can be addressed in future iterations with the improvements outlined above.
 
