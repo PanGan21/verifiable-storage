@@ -1,0 +1,24 @@
+target/
+Cargo.lock
+**/*.rs.bk
+*.pem
+*.key
+.DS_Store
+*.log
+
+# Server data
+server_data/
+*/server_data/
+
+# Client data
+client_data/
+*/client_data/
+
+# Test files
+test_files/
+downloaded/
+root_hash.txt
+root_hash_*.txt
+fake_root.txt
+session_id.txt
+
