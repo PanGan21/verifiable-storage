@@ -65,10 +65,10 @@ fn main() -> anyhow::Result<()> {
     let config = ClientConfig::load();
 
     if let Commands::GenerateKeypair { force } = &cli.command {
-        return generate_keypair_command(*force);
+        return generate_keypair_command(&config.data_dir, *force);
     }
 
-    let (signing_key, client_id) = get_or_create_keypair()?;
+    let (signing_key, client_id) = get_or_create_keypair(&config.data_dir)?;
 
     let client_id_file = config.data_dir.join("client_id.txt");
     if let Some(parent) = client_id_file.parent() {
@@ -86,7 +86,7 @@ fn main() -> anyhow::Result<()> {
             batch_id,
         } => {
             let server_url = config.get_server_url(server.as_deref());
-            upload::upload_files(&dir, &server_url, &batch_id, &signing_key)?;
+            upload::upload_files(&dir, &server_url, &batch_id, &signing_key, &config.data_dir)?;
         }
         Commands::Download {
             filename,
@@ -97,7 +97,7 @@ fn main() -> anyhow::Result<()> {
         } => {
             let server_url = config.get_server_url(server.as_deref());
             let root_hash = root_hash.unwrap_or_else(|| {
-                download::load_root_hash(&batch_id).expect("Failed to load root hash")
+                download::load_root_hash(&batch_id, &config.data_dir).expect("Failed to load root hash")
             });
             download::download_file(
                 &server_url,
@@ -106,6 +106,7 @@ fn main() -> anyhow::Result<()> {
                 &signing_key,
                 &root_hash,
                 output_dir.as_ref(),
+                &config.data_dir,
             )?;
         }
     }

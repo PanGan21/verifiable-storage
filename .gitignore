@@ -1,24 +1,77 @@
+# Rust build artifacts
 target/
 Cargo.lock
+
+# Backup files
 **/*.rs.bk
+*.bak
+*~
+
+# Cryptographic keys and certificates
 *.pem
 *.key
+*.crt
+*.cert
+
+# OS files
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+*.swp
+*.swo
+
+# Log files
 *.log
+*.log.*
 
 # Server data
 server_data/
 */server_data/
 
-# Client data
+# Client data (all variants)
 client_data/
+client*_data/
 */client_data/
+*/client*_data/
 
-# Test files
+# Test files and directories
 test_files/
+*_files/
 downloaded/
+
+# Client metadata files
 root_hash.txt
 root_hash_*.txt
+filenames.json
+client_id.txt
+keypair.txt
 fake_root.txt
 session_id.txt
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# IDE and editor files
+.idea/
+.vscode/
+*.code-workspace
+.project
+.classpath
+.settings/
+*.sublime-project
+*.sublime-workspace
+
+# Docker volumes (if any)
+docker-volumes/
+
+# Environment files
+.env
+.env.local
+.env.*.local
 

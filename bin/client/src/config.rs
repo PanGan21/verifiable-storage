@@ -37,6 +37,6 @@ impl ClientConfig {
 }
 
 /// Get the path to the keypair file
-pub fn get_key_file_path() -> PathBuf {
-    PathBuf::from(CLIENT_DATA_DIR).join(KEY_FILE)
+pub fn get_key_file_path(data_dir: &PathBuf) -> PathBuf {
+    data_dir.join(KEY_FILE)
 }

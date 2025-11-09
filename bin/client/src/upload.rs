@@ -1,6 +1,3 @@
-//! File upload functionality
-
-use crate::config::CLIENT_DATA_DIR;
 use anyhow::{Context, Result};
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
@@ -29,15 +26,22 @@ pub struct FileUploader {
     server: String,
     batch_id: String,
     signing_key: SigningKey,
+    data_dir: PathBuf,
 }
 
 impl FileUploader {
     /// Create a new file uploader
-    pub fn new(server: String, batch_id: String, signing_key: SigningKey) -> Self {
+    pub fn new(
+        server: String,
+        batch_id: String,
+        signing_key: SigningKey,
+        data_dir: PathBuf,
+    ) -> Self {
         Self {
             server,
             batch_id,
             signing_key,
+            data_dir,
         }
     }
 }
@@ -48,11 +52,13 @@ pub fn upload_files(
     server: &str,
     batch_id: &str,
     signing_key: &SigningKey,
+    data_dir: &PathBuf,
 ) -> Result<String> {
     let uploader = FileUploader::new(
         server.to_string(),
         batch_id.to_string(),
         signing_key.clone(),
+        data_dir.clone(),
     );
     uploader.upload_from_directory(dir)
 }
@@ -70,11 +76,14 @@ impl FileUploader {
         info!("Found {} files to upload", file_list.len());
 
         // Build Merkle tree and compute root hash
-        let file_data: Vec<Vec<u8>> = file_list.iter().map(|(_, content)| content.clone()).collect();
+        let file_data: Vec<Vec<u8>> = file_list
+            .iter()
+            .map(|(_, content)| content.clone())
+            .collect();
         let root_hash_hex = hex::encode(
             MerkleTree::from_data(&file_data)
                 .context("Failed to build Merkle tree")?
-                .root_hash()
+                .root_hash(),
         );
 
         info!("Uploading files (computed root hash: {})", root_hash_hex);
@@ -93,10 +102,8 @@ impl FileUploader {
             "Upload complete! Batch ID: {}, Root hash: {}",
             self.batch_id, root_hash_hex
         );
-        println!(
-            "Root hash saved to: client_data/{}/root_hash.txt",
-            self.batch_id
-        );
+        let root_hash_path = self.data_dir.join(&self.batch_id).join("root_hash.txt");
+        println!("Root hash saved to: {}", root_hash_path.display());
 
         Ok(root_hash_hex)
     }
@@ -222,7 +229,7 @@ impl FileUploader {
         root_hash_hex: &str,
         file_list: &[(String, Vec<u8>)],
     ) -> Result<()> {
-        let batch_dir = PathBuf::from(CLIENT_DATA_DIR).join(&self.batch_id);
+        let batch_dir = self.data_dir.join(&self.batch_id);
         fs::create_dir_all(&batch_dir).context("Failed to create batch directory")?;
 
         // Save root hash
@@ -230,7 +237,10 @@ impl FileUploader {
         fs::write(&root_hash_file, root_hash_hex).context("Failed to write root_hash.txt")?;
 
         // Save filenames
-        let filenames: Vec<String> = file_list.iter().map(|(filename, _)| filename.clone()).collect();
+        let filenames: Vec<String> = file_list
+            .iter()
+            .map(|(filename, _)| filename.clone())
+            .collect();
         let filenames_file = batch_dir.join("filenames.json");
         fs::write(
             &filenames_file,

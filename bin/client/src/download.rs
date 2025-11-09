@@ -1,6 +1,3 @@
-//! File download and verification functionality
-
-use crate::config::CLIENT_DATA_DIR;
 use anyhow::{Context, Result};
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
@@ -42,15 +39,22 @@ pub struct FileDownloader {
     server: String,
     batch_id: String,
     signing_key: SigningKey,
+    data_dir: PathBuf,
 }
 
 impl FileDownloader {
     /// Create a new file downloader
-    pub fn new(server: String, batch_id: String, signing_key: SigningKey) -> Self {
+    pub fn new(
+        server: String,
+        batch_id: String,
+        signing_key: SigningKey,
+        data_dir: PathBuf,
+    ) -> Self {
         Self {
             server,
             batch_id,
             signing_key,
+            data_dir,
         }
     }
 
@@ -243,10 +247,8 @@ impl FileDownloader {
         let output_path = if let Some(dir) = output_dir {
             dir.clone()
         } else {
-            // Default: client_data/{batch_id}/downloaded/
-            PathBuf::from(CLIENT_DATA_DIR)
-                .join(&self.batch_id)
-                .join("downloaded")
+            // Default: data_dir/{batch_id}/downloaded/
+            self.data_dir.join(&self.batch_id).join("downloaded")
         };
 
         // Create output directory if it doesn't exist
@@ -269,20 +271,20 @@ pub fn download_file(
     signing_key: &SigningKey,
     root_hash: &str,
     output_dir: Option<&PathBuf>,
+    data_dir: &PathBuf,
 ) -> Result<()> {
     let downloader = FileDownloader::new(
         server.to_string(),
         batch_id.to_string(),
         signing_key.clone(),
+        data_dir.clone(),
     );
     downloader.download_and_verify(filename, root_hash, output_dir)
 }
 
 /// Load root hash from file
-pub fn load_root_hash(batch_id: &str) -> Result<String> {
-    let root_hash_file = PathBuf::from(CLIENT_DATA_DIR)
-        .join(batch_id)
-        .join("root_hash.txt");
+pub fn load_root_hash(batch_id: &str, data_dir: &PathBuf) -> Result<String> {
+    let root_hash_file = data_dir.join(batch_id).join("root_hash.txt");
     if !root_hash_file.exists() {
         anyhow::bail!(
             "Root hash not found for batch {}. \
