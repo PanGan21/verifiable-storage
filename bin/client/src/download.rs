@@ -2,7 +2,7 @@ use crate::constants::{DOWNLOADED_DIR, DOWNLOAD_ENDPOINT, ROOT_HASH_FILE};
 use anyhow::{Context, Result};
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
-use common::{DownloadResponse, ProofNodeJson};
+use common::{file_utils, DownloadResponse, ProofNodeJson};
 use crypto::{hash_leaf, sign_message};
 use ed25519_dalek::SigningKey;
 use merkle_tree::MerkleProof;
@@ -289,6 +289,10 @@ pub fn download_file(
     root_hash: &str,
     output_dir: Option<&PathBuf>,
 ) -> Result<()> {
+    // Validate filename to prevent path traversal attacks
+    file_utils::validate_filename(filename)
+        .map_err(|e| anyhow::anyhow!("{}: {}", e.message(), filename))?;
+    
     let downloader = FileDownloader::new(
         config.server.clone(),
         config.batch_id.clone(),

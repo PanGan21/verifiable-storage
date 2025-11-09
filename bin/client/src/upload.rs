@@ -2,7 +2,7 @@ use crate::constants::{FILENAMES_FILE, ROOT_HASH_FILE, UPLOAD_ENDPOINT};
 use anyhow::{Context, Result};
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
-use common::UploadRequest;
+use common::{file_utils, UploadRequest};
 use crypto::{hash_leaf, sign_message};
 use ed25519_dalek::SigningKey;
 use log::info;
@@ -121,6 +121,11 @@ impl FileUploader {
                     .and_then(|n| n.to_str())
                     .map(|s| s.to_string())
                     .unwrap_or_else(|| path.to_string_lossy().to_string());
+                
+                // Validate filename to prevent path traversal attacks
+                file_utils::validate_filename(&filename)
+                    .map_err(|e| anyhow::anyhow!("{}: {}", e.message(), filename))?;
+                
                 let content =
                     fs::read(&path).with_context(|| format!("Failed to read file: {:?}", path))?;
                 file_list.push((filename, content));

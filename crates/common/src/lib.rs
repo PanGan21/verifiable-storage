@@ -1,3 +1,5 @@
+pub mod file_utils;
+
 use serde::{Deserialize, Serialize};
 
 /// Request to upload a file to the server

@@ -4,7 +4,7 @@ use crate::state::AppState;
 use actix_web::{get, post, web, HttpResponse, Result as ActixResult};
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
-use common::UploadRequest;
+use common::{file_utils, UploadRequest};
 use crypto::hash_leaf;
 use tracing::info;
 
@@ -18,6 +18,10 @@ pub async fn upload(
         "POST /upload - Request received: filename={}, batch_id={}",
         req.filename, req.batch_id
     );
+
+    // Validate filename to prevent path traversal attacks
+    file_utils::validate_filename(&req.filename)
+        .map_err(|e| actix_web::error::ErrorBadRequest(e.message()))?;
 
     // Validate timestamp to prevent replay attacks
     AuthVerifier::validate_timestamp_default(req.timestamp)

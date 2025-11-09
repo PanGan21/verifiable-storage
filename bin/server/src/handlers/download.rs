@@ -5,7 +5,7 @@ use crate::handlers::error::{
 use crate::handlers::proof::{generate_proof, prepare_file_data, proof_to_json};
 use crate::state::AppState;
 use actix_web::{get, web, HttpResponse, Result as ActixResult};
-use common::{DownloadRequest, DownloadResponse};
+use common::{file_utils, DownloadRequest, DownloadResponse};
 use tracing::info;
 
 /// Handle file download and proof generation
@@ -20,6 +20,10 @@ pub async fn download(
         "GET /download - Request received: filename={}, batch_id={}",
         req.filename, req.batch_id
     );
+
+    // Validate filename to prevent path traversal attacks
+    file_utils::validate_filename(&req.filename)
+        .map_err(|e| actix_web::error::ErrorBadRequest(e.message()))?;
 
     // Validate timestamp to prevent replay attacks
     AuthVerifier::validate_timestamp_default(req.timestamp)
