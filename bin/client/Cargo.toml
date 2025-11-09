@@ -1,0 +1,25 @@
+[package]
+name = "client"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "client"
+path = "src/main.rs"
+
+[dependencies]
+crypto = { path = "../../crates/crypto" }
+merkle-tree = { path = "../../crates/merkle-tree" }
+common = { path = "../../crates/common" }
+ed25519-dalek.workspace = true
+clap.workspace = true
+env_logger.workspace = true
+log.workspace = true
+anyhow.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+hex.workspace = true
+base64.workspace = true
+
