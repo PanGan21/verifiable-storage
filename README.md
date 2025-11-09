@@ -2,6 +2,8 @@
 
 A Rust implementation of a verifiable storage system where clients can upload files to a server and later download them with cryptographic proofs to verify integrity.
 
+⚠️ **WARNING: This project is work in progress (WIP) and is NOT ready for production use. Use at your own risk.**
+
 ## Features
 
 - **Ed25519 Signatures**: Cryptographic authentication for all requests
@@ -198,7 +200,7 @@ This implementation satisfies all system requirements:
 ✅ **Proof Verification**: Client verifies proof against stored root hash  
 ✅ **Rust Implementation**: Entire system written in Rust  
 ✅ **Networking**: HTTP REST API works across multiple machines  
-✅ **Production-Ready**: Docker Compose, database support, error handling, logging  
+✅ **Development Features**: Docker Compose, database support, error handling, logging  
 ✅ **Docker Compose Demo**: See Docker Compose section above
 
 ## File Deletion
@@ -241,10 +243,10 @@ verifiable-storage/
 ✅ **Proof Verification**: Client verifies proof against stored root hash  
 ✅ **Rust Language**: Entire system written in Rust  
 ✅ **Networking**: HTTP REST API works across multiple machines  
-✅ **Production-Ready**: Docker, database, error handling, logging  
+✅ **Development Features**: Docker, database, error handling, logging  
 ✅ **Docker Compose**: `docker-compose up --build` starts everything  
 ✅ **Documentation**: See [docs/architecture.md](docs/architecture.md)
 
 ## License
 
-MIT OR Apache-2.0
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
