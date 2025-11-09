@@ -572,20 +572,86 @@ Given more time, the following improvements would be prioritized:
 
 ## Deployment
 
-### Development
+### Docker Compose (Recommended)
+
+The simplest way to run the system is using Docker Compose, which starts both the server and PostgreSQL database:
 
 ```bash
+docker compose up --build
+```
+
+The server will be available at `http://localhost:8080` with PostgreSQL database storage. Configuration is handled through environment variables in `docker-compose.yml`.
+
+### Filesystem Storage
+
+For development or single-instance deployments, you can use filesystem storage instead of a database:
+
+```bash
+# Kill any existing server on port 8080
+lsof -ti :8080 | xargs kill -9 2>/dev/null || true
+
+# Start server with filesystem storage (default)
 cargo run --release --bin server
-cargo run --release --bin client upload --dir test_files --batch-id batch-001
 ```
 
-### Production
+The server will store files in the `server_data/` directory by default. You can specify a custom data directory:
 
 ```bash
-docker-compose up --build
+cargo run --release --bin server -- --storage fs --data-dir /path/to/data
 ```
 
-Server runs on port 8080 with PostgreSQL database. Environment variables configure database URL, host, port, and logging level.
+**Use Cases for Filesystem Storage:**
+
+- Local development and testing
+- Single-instance deployments
+- Simple deployments without database infrastructure
+- Quick prototyping
+
+**Limitations:**
+
+- No horizontal scaling (single server instance only)
+- File system limits apply
+- No shared state across multiple server instances
+
+### Database Storage (Local)
+
+To run the server locally with PostgreSQL database storage:
+
+```bash
+# Start PostgreSQL database
+docker compose up -d postgres
+
+# Set database URL
+export DATABASE_URL="postgresql://verifiable_storage:verifiable_storage_password@localhost:5432/verifiable_storage"
+
+# Start server with database storage
+cargo run --release --bin server -- --storage db
+```
+
+**Use Cases for Database Storage:**
+
+- Production deployments
+- Horizontal scaling (multiple server instances)
+- Shared state across server instances
+- Better performance for large datasets
+
+### Configuration
+
+Server configuration can be set via environment variables or command-line arguments:
+
+- `SERVER_HOST`: Server host (default: `127.0.0.1`)
+- `SERVER_PORT`: Server port (default: `8080`)
+- `DATABASE_URL`: PostgreSQL connection string (required for database storage)
+- `RUST_LOG`: Logging level (default: `info`)
+
+Example:
+
+```bash
+export SERVER_HOST=0.0.0.0
+export SERVER_PORT=8080
+export RUST_LOG=debug
+cargo run --release --bin server
+```
 
 ## Conclusion
 

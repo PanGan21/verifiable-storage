@@ -20,26 +20,13 @@ cargo build --release
 
 ### Start Server
 
-**Option A: Docker Compose (Recommended for Demo)**
-
 ```bash
 docker compose up --build
 ```
 
-**Option B: Local Server with Filesystem Storage**
+The server will be available at `http://localhost:8080` with PostgreSQL database storage.
 
-```bash
-lsof -ti :8080 | xargs kill -9 2>/dev/null || true
-cargo run --release --bin server
-```
-
-**Option C: Local Server with Database Storage**
-
-```bash
-docker compose up -d postgres
-export DATABASE_URL="postgresql://verifiable_storage:verifiable_storage_password@localhost:5432/verifiable_storage"
-cargo run --release --bin server -- --storage db
-```
+For other deployment options (filesystem storage, local development), see the [Architecture Documentation](docs/architecture.md#deployment).
 
 ## Quick Demo
 
@@ -142,42 +129,8 @@ cat client2_data/client2-batch-001/root_hash.txt
 
 ## Advanced Usage
 
-### Server Configuration
+For detailed configuration options, deployment alternatives (filesystem storage, local database), and advanced usage, see the [Architecture Documentation](docs/architecture.md#deployment).
 
-```bash
-# Filesystem storage with custom data directory
-cargo run --release --bin server -- --storage fs --data-dir /path/to/data
-
-# Database storage with custom URL
-cargo run --release --bin server -- --storage db --database-url "postgresql://..."
-
-# Custom host and port
-export SERVER_HOST=0.0.0.0
-export SERVER_PORT=8080
-cargo run --release --bin server
-```
-
-## Client Configuration
-
-```bash
-# Custom server URL
-export CLIENT_SERVER_URL="http://localhost:8080"
-
-# Custom data directory
-export CLIENT_DATA_DIR="custom_client_data"
-```
-
-## Alternative: Local Server (Without Docker)
-
-If you prefer to run the server locally without Docker:
-
-```bash
-# Start server with filesystem storage
-lsof -ti :8080 | xargs kill -9 2>/dev/null || true
-cargo run --release --bin server
-```
-
-Then use `http://127.0.0.1:8080` as the server URL in the demo above.
 
 ## Documentation
 
