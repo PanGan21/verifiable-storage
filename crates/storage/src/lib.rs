@@ -6,6 +6,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 
 pub use backend::StorageBackend;
+pub use database::DatabaseRetryConfig;
 
 /// Storage backend trait for file and metadata operations
 #[async_trait]

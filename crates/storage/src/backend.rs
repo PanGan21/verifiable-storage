@@ -1,4 +1,8 @@
-use crate::{database::DatabaseStorage, filesystem::FilesystemStorage, Storage};
+use crate::{
+    database::{DatabaseRetryConfig, DatabaseStorage},
+    filesystem::FilesystemStorage,
+    Storage,
+};
 use anyhow::Result;
 use std::sync::Arc;
 
@@ -6,8 +10,11 @@ use std::sync::Arc;
 pub enum StorageBackend {
     /// Filesystem storage with data directory path
     Filesystem(String),
-    /// Database storage with database URL
-    Database(String),
+    /// Database storage with database URL and optional retry configuration
+    Database {
+        database_url: String,
+        retry_config: Option<DatabaseRetryConfig>,
+    },
 }
 
 impl StorageBackend {
@@ -18,8 +25,16 @@ impl StorageBackend {
                 let storage = FilesystemStorage::new(data_dir);
                 Ok(Arc::new(storage))
             }
-            StorageBackend::Database(database_url) => {
-                let storage = DatabaseStorage::new(&database_url).await?;
+            StorageBackend::Database {
+                database_url,
+                retry_config,
+            } => {
+                let storage = match retry_config {
+                    Some(config) => {
+                        DatabaseStorage::new_with_retry_config(&database_url, config).await?
+                    }
+                    None => DatabaseStorage::new(&database_url).await?,
+                };
                 Ok(Arc::new(storage))
             }
         }

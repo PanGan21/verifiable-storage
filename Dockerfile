@@ -14,16 +14,9 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 # Copy workspace configuration files
-COPY Cargo.toml Cargo.lock ./
-
-# Copy all crates (needed for workspace)
+COPY Cargo.toml ./
 COPY crates ./crates
-
-# Copy server package files
 COPY bin/server/Cargo.toml ./bin/server/
-
-# Copy client Cargo.toml (workspace requires all members, but we only build the server)
-# We need the client Cargo.toml for workspace resolution, but we don't build it
 COPY bin/client/Cargo.toml ./bin/client/
 
 # Create dummy source files for dependency compilation caching
@@ -32,12 +25,19 @@ RUN mkdir -p bin/server/src bin/client/src && \
     echo "fn main() {}" > bin/server/src/main.rs && \
     echo "fn main() {}" > bin/client/src/main.rs
 
+# Generate Cargo.lock (it will be created during the first cargo build if it doesn't exist)
+# This ensures the build works whether Cargo.lock is committed or not
+RUN cargo generate-lockfile || true
+
 # Build dependencies only (this layer will be cached if dependencies don't change)
-# We suppress output to avoid clogging the build log
 RUN cargo build --release --bin server 2>&1 | grep -E "(Compiling|Finished|error)" | tail -50 || true
 
 # Copy actual server source code (this invalidates cache only when source changes)
 COPY bin/server/src ./bin/server/src
+
+# Force rebuild of server binary by touching the main.rs file
+# This ensures Cargo rebuilds the server even if dependencies haven't changed
+RUN touch bin/server/src/main.rs
 
 # Build the actual server binary (client stays as dummy, not built)
 RUN cargo build --release --bin server

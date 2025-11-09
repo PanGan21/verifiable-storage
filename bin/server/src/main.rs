@@ -8,7 +8,7 @@ use state::AppState;
 use std::fs;
 use std::path::PathBuf;
 use storage::StorageBackend;
-use tracing::info;
+use tracing::{error, info};
 use tracing_subscriber;
 
 const SERVER_DATA_DIR: &str = "server_data";
@@ -28,8 +28,10 @@ async fn main() -> std::io::Result<()> {
         .with_writer(std::io::stderr)
         .init();
 
-    // Log startup
-    eprintln!("Starting verifiable storage server...");
+    info!(
+        "Starting verifiable storage server (PID: {})",
+        std::process::id()
+    );
 
     // Parse command line arguments
     let matches = Command::new("server")
@@ -57,15 +59,13 @@ async fn main() -> std::io::Result<()> {
             Arg::new("port")
                 .long("port")
                 .value_name("PORT")
-                .help("Server port (default: 8080)")
-                .default_value("8080"),
+                .help("Server port (default: 8080, or SERVER_PORT env var)"),
         )
         .arg(
             Arg::new("host")
                 .long("host")
                 .value_name("HOST")
-                .help("Server host (default: 0.0.0.0)")
-                .default_value("0.0.0.0"),
+                .help("Server host (default: 0.0.0.0, or SERVER_HOST env var)"),
         )
         .get_matches();
 
@@ -77,24 +77,35 @@ async fn main() -> std::io::Result<()> {
             .cloned()
             .or_else(|| std::env::var("DATABASE_URL").ok())
             .ok_or_else(|| {
-                eprintln!("ERROR: Database URL required when using database storage. Set --database-url or DATABASE_URL env var");
+                error!("Database URL required when using database storage. Set --database-url or DATABASE_URL env var");
                 std::io::Error::new(
                     std::io::ErrorKind::InvalidInput,
                     "Database URL required when using database storage. Set --database-url or DATABASE_URL env var",
                 )
             })?;
-        info!("Using database storage: {}", database_url);
-        eprintln!("Connecting to database...");
-        StorageBackend::Database(database_url.to_string())
-            .initialize()
-            .await
-            .map_err(|e| {
-                eprintln!("ERROR: Failed to initialize database storage: {}", e);
-                std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("Failed to initialize database storage: {}", e),
-                )
-            })?
+        info!("Using database storage");
+        
+        // Get retry configuration from environment variables
+        let retry_config = storage::DatabaseRetryConfig::from_env();
+        info!(
+            "Database retry configuration: max_attempts={}, initial_delay_seconds={}",
+            retry_config.max_attempts, retry_config.initial_delay_seconds
+        );
+        
+        info!("Connecting to database...");
+        StorageBackend::Database {
+            database_url: database_url.to_string(),
+            retry_config: Some(retry_config),
+        }
+        .initialize()
+        .await
+        .map_err(|e| {
+            error!("Failed to initialize database storage: {}", e);
+            std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("Failed to initialize database storage: {}", e),
+            )
+        })?
     } else {
         let data_dir = matches
             .get_one::<String>("data-dir")
@@ -109,33 +120,39 @@ async fn main() -> std::io::Result<()> {
             .initialize()
             .await
             .map_err(|e| {
-                eprintln!("ERROR: Failed to initialize filesystem storage: {}", e);
+                error!("Failed to initialize filesystem storage: {}", e);
                 std::io::Error::new(
                     std::io::ErrorKind::Other,
                     format!("Failed to initialize filesystem storage: {}", e),
                 )
             })?
     };
-    eprintln!("Storage backend initialized successfully");
+    info!("Storage backend initialized successfully");
 
     // Initialize application state
     let state = web::Data::new(AppState::new(storage));
 
-    // Get host and port from command line arguments
+    // Get host and port from command line arguments, environment variables, or defaults
+    // Priority: command-line args > environment variables > defaults
+    let env_host = std::env::var("SERVER_HOST").ok();
+    let env_port = std::env::var("SERVER_PORT").ok();
+
     let host = matches
         .get_one::<String>("host")
         .map(|s| s.as_str())
+        .or_else(|| env_host.as_deref())
         .unwrap_or("0.0.0.0");
     let port = matches
         .get_one::<String>("port")
         .map(|s| s.as_str())
+        .or_else(|| env_port.as_deref())
         .unwrap_or("8080");
     let bind_address = format!("{}:{}", host, port);
 
     info!("Starting server on http://{}", bind_address);
-    eprintln!("Starting server on http://{}", bind_address);
+    info!("Server state initialized, creating HttpServer...");
 
-    HttpServer::new(move || {
+    let server = HttpServer::new(move || {
         App::new()
             .app_data(state.clone())
             .service(handlers::upload::upload)
@@ -144,14 +161,13 @@ async fn main() -> std::io::Result<()> {
     })
     .bind(&bind_address)
     .map_err(|e| {
-        eprintln!("ERROR: Failed to bind to {}: {}", bind_address, e);
+        error!("Failed to bind to {}: {}", bind_address, e);
         e
-    })?
-    .workers(1)
-    .run()
-    .await
-    .map_err(|e| {
-        eprintln!("ERROR: Server runtime error: {}", e);
-        e
-    })
+    })?;
+
+    info!("Server bound successfully to http://{}", bind_address);
+
+    // Run the server - this will block until the server shuts down
+    // The server runs indefinitely until it receives a shutdown signal
+    server.workers(1).run().await
 }
