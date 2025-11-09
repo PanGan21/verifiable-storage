@@ -1,4 +1,4 @@
 pub mod download;
 pub mod error;
-mod proof;
+pub mod health;
 pub mod upload;

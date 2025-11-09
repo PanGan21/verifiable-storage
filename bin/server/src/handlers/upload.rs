@@ -1,7 +1,7 @@
 use crate::auth::AuthVerifier;
 use crate::handlers::error::{handle_auth_error, handle_error, handle_server_error};
 use crate::state::AppState;
-use actix_web::{get, post, web, HttpResponse, Result as ActixResult};
+use actix_web::{post, web, HttpResponse, Result as ActixResult};
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use common::{file_utils, UploadRequest};
@@ -90,12 +90,4 @@ fn decode_and_verify_file_content(req: &UploadRequest) -> ActixResult<Vec<u8>> {
     }
 
     Ok(file_content)
-}
-
-/// Health check endpoint
-#[get("/health")]
-pub async fn health() -> ActixResult<HttpResponse> {
-    Ok(HttpResponse::Ok().json(common::HealthResponse {
-        status: "ok".to_string(),
-    }))
 }

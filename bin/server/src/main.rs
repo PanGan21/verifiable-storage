@@ -3,6 +3,7 @@ mod config;
 mod constants;
 mod handlers;
 mod logger;
+mod proof;
 mod state;
 
 use actix_web::{web, App, HttpServer};
@@ -81,7 +82,7 @@ async fn main() -> std::io::Result<()> {
             .app_data(state.clone())
             .service(handlers::upload::upload)
             .service(handlers::download::download)
-            .service(handlers::upload::health)
+            .service(handlers::health::health)
     })
     .bind(&bind_addr)
     .map_err(|e| {

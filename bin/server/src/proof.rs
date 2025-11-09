@@ -7,7 +7,7 @@ use crypto::hash_leaf;
 use merkle_tree::MerkleTree;
 use tracing::error;
 
-use super::error::handle_server_error;
+use crate::handlers::error::handle_server_error;
 
 /// Generate Merkle proof for a file in a batch
 pub async fn generate_proof(
@@ -64,3 +64,4 @@ pub fn prepare_file_data(file_content: &[u8]) -> (String, String) {
     let file_content_b64 = STANDARD.encode(file_content);
     (file_hash_hex, file_content_b64)
 }
+

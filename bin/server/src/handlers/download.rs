@@ -2,7 +2,7 @@ use crate::auth::AuthVerifier;
 use crate::handlers::error::{
     handle_auth_error, handle_error, handle_not_found, handle_server_error,
 };
-use crate::handlers::proof::{generate_proof, prepare_file_data, proof_to_json};
+use crate::proof::{generate_proof, prepare_file_data, proof_to_json};
 use crate::state::AppState;
 use actix_web::{get, web, HttpResponse, Result as ActixResult};
 use common::{file_utils, DownloadRequest, DownloadResponse};
