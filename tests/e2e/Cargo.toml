@@ -1,0 +1,26 @@
+[package]
+name = "e2e-tests"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "e2e-tests"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+tokio = { workspace = true, features = ["full"] }
+sqlx = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+hex = { workspace = true }
+base64 = { workspace = true }
+sha2 = { workspace = true }
+ed25519-dalek = { workspace = true }
+rand = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+merkle-tree = { path = "../../crates/merkle-tree" }
+crypto = { path = "../../crates/crypto" }
+common = { path = "../../crates/common" }

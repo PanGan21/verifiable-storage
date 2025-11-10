@@ -43,6 +43,9 @@ test_files/
 *_files/
 downloaded/
 
+# E2E test data
+tests/e2e/test_data/
+
 # Client metadata files
 root_hash.txt
 root_hash_*.txt

@@ -1,0 +1,22 @@
+services:
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: verifiable-storage-server-fs
+    ports:
+      - "8081:8080"
+    environment:
+      - RUST_LOG=info
+      - SERVER_HOST=0.0.0.0
+      - SERVER_PORT=8080
+    restart: unless-stopped
+    networks:
+      - verifiable-storage-network
+    volumes:
+      - ./tests/e2e/test_data/filesystem/server_data:/app/server_data:rw
+    command: ["./server", "--storage", "fs", "--data-dir", "/app/server_data"]
+
+networks:
+  verifiable-storage-network:
+    driver: bridge
