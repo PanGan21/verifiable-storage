@@ -1,24 +1,13 @@
 use crate::constants::{FILENAMES_FILE, ROOT_HASH_FILE, UPLOAD_ENDPOINT};
 use anyhow::{Context, Result};
-use base64::engine::general_purpose::STANDARD;
-use base64::Engine;
-use common::{file_utils, UploadRequest};
+use common::file_utils;
 use crypto::{hash_leaf, sign_message};
 use ed25519_dalek::SigningKey;
 use log::info;
 use merkle_tree::MerkleTree;
-use reqwest::blocking::Client;
+use reqwest::blocking::{multipart, Client};
 use std::fs;
 use std::path::{Path, PathBuf};
-
-/// Get current timestamp in milliseconds since Unix epoch
-/// Used to ensure each signature is unique, even for identical requests
-fn get_current_timestamp_ms() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_millis() as u64
-}
 
 /// Handles file uploads to the server
 pub struct FileUploader {
@@ -145,13 +134,13 @@ impl FileUploader {
         let public_key_hex = hex::encode(public_key.to_bytes());
 
         for (filename, content) in file_list {
-            let request = self.build_upload_request(filename, content, &public_key_hex)?;
+            let form = self.build_multipart_form(filename, content, &public_key_hex)?;
 
             // Send request
             let url = format!("{}{}", self.server, UPLOAD_ENDPOINT);
             let response = client
                 .post(&url)
-                .json(&request)
+                .multipart(form)
                 .send()
                 .context("Failed to connect to server")?;
 
@@ -176,53 +165,58 @@ impl FileUploader {
         Ok(())
     }
 
-    /// Build upload request for a file
-    fn build_upload_request(
+    /// Build multipart form for file upload
+    fn build_multipart_form(
         &self,
         filename: &str,
         content: &[u8],
         public_key_hex: &str,
-    ) -> Result<UploadRequest> {
+    ) -> Result<multipart::Form> {
         // Compute leaf hash
         let leaf_hash = hash_leaf(content);
         let leaf_hash_hex = hex::encode(leaf_hash);
 
-        // Encode file content as base64
-        let file_content_b64 = STANDARD.encode(content);
-
-        // Create message to sign
-        let timestamp = self.get_current_timestamp();
-        let message =
-            self.build_upload_message(filename, &leaf_hash_hex, &file_content_b64, timestamp);
+        // Create message to sign using raw file bytes
+        let timestamp = common::get_current_timestamp_ms();
+        let message = self.build_upload_message(filename, &leaf_hash_hex, content, timestamp);
 
         // Sign message
         let signature = sign_message(&self.signing_key, &message);
         let signature_hex = hex::encode(signature.to_bytes());
 
-        Ok(UploadRequest {
-            filename: filename.to_string(),
-            batch_id: self.batch_id.clone(),
-            file_hash: leaf_hash_hex,
-            file_content: file_content_b64,
-            signature: signature_hex,
-            timestamp,
-            public_key: public_key_hex.to_string(),
-        })
+        // Create multipart form
+        let form = multipart::Form::new()
+            .text("filename", filename.to_string())
+            .text("batch_id", self.batch_id.clone())
+            .text("file_hash", leaf_hash_hex)
+            .text("signature", signature_hex)
+            .text("timestamp", timestamp.to_string())
+            .text("public_key", public_key_hex.to_string())
+            .part(
+                "file",
+                multipart::Part::bytes(content.to_vec())
+                    .file_name(filename.to_string())
+                    .mime_str("application/octet-stream")
+                    .context("Failed to set MIME type")?,
+            );
+
+        Ok(form)
     }
 
     /// Build message for upload signature
+    /// Signs raw file bytes (not base64)
     fn build_upload_message(
         &self,
         filename: &str,
         file_hash: &str,
-        file_content: &str,
+        file_content: &[u8], // Raw bytes, not base64
         timestamp: u64,
     ) -> Vec<u8> {
         let mut message = Vec::new();
         message.extend_from_slice(filename.as_bytes());
         message.extend_from_slice(self.batch_id.as_bytes());
         message.extend_from_slice(file_hash.as_bytes());
-        message.extend_from_slice(file_content.as_bytes());
+        message.extend_from_slice(file_content);
         message.extend_from_slice(&timestamp.to_be_bytes());
         message
     }
@@ -256,8 +250,4 @@ impl FileUploader {
         Ok(())
     }
 
-    /// Get current timestamp
-    fn get_current_timestamp(&self) -> u64 {
-        get_current_timestamp_ms()
-    }
 }

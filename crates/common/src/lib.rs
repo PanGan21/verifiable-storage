@@ -2,16 +2,13 @@ pub mod file_utils;
 
 use serde::{Deserialize, Serialize};
 
-/// Request to upload a file to the server
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct UploadRequest {
-    pub filename: String,     // Original filename
-    pub batch_id: String,     // Batch ID this file belongs to
-    pub file_hash: String,    // hex-encoded leaf hash
-    pub file_content: String, // base64-encoded
-    pub signature: String,    // hex-encoded
-    pub timestamp: u64,
-    pub public_key: String, // hex-encoded (for client registration)
+/// Get current timestamp in milliseconds since Unix epoch
+/// Used to ensure each signature is unique, even for identical requests
+pub fn get_current_timestamp_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64
 }
 
 /// Request to download a file from the server (query parameters)

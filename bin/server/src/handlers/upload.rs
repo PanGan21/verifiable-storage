@@ -1,38 +1,85 @@
 use crate::auth::AuthVerifier;
 use crate::handlers::error::{handle_auth_error, handle_error, handle_server_error};
+use crate::handlers::upload_form::UploadForm;
 use crate::state::AppState;
+use actix_multipart::form::MultipartForm;
 use actix_web::{post, web, HttpResponse, Result as ActixResult};
-use base64::engine::general_purpose::STANDARD;
-use base64::Engine;
-use common::{file_utils, UploadRequest};
+use common::file_utils;
 use crypto::hash_leaf;
 use tracing::info;
 
-/// Handle file upload
+/// Handle file upload (multipart/form-data)
 #[post("/upload")]
 pub async fn upload(
-    req: web::Json<UploadRequest>,
+    form: MultipartForm<UploadForm>,
     state: web::Data<AppState>,
 ) -> ActixResult<HttpResponse> {
+    // Extract file path before moving form
+    let file_path = form.file.file.path().to_path_buf();
+
+    // Validate form fields (length, format checks)
+    form.validate_fields()
+        .map_err(|e| actix_web::error::ErrorBadRequest(e))?;
+
+    // Extract all fields from multipart form
+    let UploadForm {
+        file: _file,
+        filename,
+        batch_id,
+        file_hash,
+        signature,
+        timestamp,
+        public_key,
+    } = form.into_inner();
+
+    let filename = filename.into_inner();
+    let batch_id = batch_id.into_inner();
+    let file_hash = file_hash.into_inner();
+    let signature_hex = signature.into_inner();
+    let timestamp = timestamp.into_inner();
+    let public_key_hex = public_key.into_inner();
+
+    // Use structured logging with Debug formatter (?), which automatically escapes control characters
     info!(
-        "POST /upload - Request received: filename={}, batch_id={}",
-        req.filename, req.batch_id
+        filename = ?filename,
+        batch_id = ?batch_id,
+        "POST /upload - Request received"
     );
 
     // Validate filename to prevent path traversal attacks
-    file_utils::validate_filename(&req.filename)
+    file_utils::validate_filename(&filename)
         .map_err(|e| actix_web::error::ErrorBadRequest(e.message()))?;
 
     // Validate timestamp to prevent replay attacks
-    AuthVerifier::validate_timestamp_default(req.timestamp)
+    AuthVerifier::validate_timestamp_default(timestamp)
         .map_err(|e| handle_auth_error("Timestamp validation failed", e))?;
 
-    let message = build_message(&req);
-    let signature = AuthVerifier::parse_signature(&req.signature)
+    // Read file content from temp file
+    // Note: File size is already limited by #[multipart(limit = "10MB")] in UploadForm
+    let file_content =
+        std::fs::read(&file_path).map_err(|e| handle_error("Failed to read uploaded file", e))?;
+
+    // Verify file hash matches content
+    let computed_hash = hash_leaf(&file_content);
+    let computed_hash_hex = hex::encode(computed_hash);
+    if computed_hash_hex != file_hash {
+        return Err(actix_web::error::ErrorBadRequest(format!(
+            "File hash mismatch: expected {}, got {}",
+            file_hash, computed_hash_hex
+        )));
+    }
+
+    // Build message using raw file bytes (same format as before)
+    let message = build_message(&filename, &batch_id, &file_hash, &file_content, timestamp);
+    let signature = AuthVerifier::parse_signature(&signature_hex)
         .map_err(|e| handle_error("Failed to parse signature", e))?;
 
+    // Validate public key format before verification
+    AuthVerifier::validate_public_key(&public_key_hex)
+        .map_err(|e| handle_auth_error("Invalid public key", e))?;
+
     let (client_id, is_new_client) =
-        AuthVerifier::verify_request_signature(&state, &message, &signature, &req.public_key)
+        AuthVerifier::verify_request_signature(&state, &message, &signature, &public_key_hex)
             .await
             .map_err(|e| handle_auth_error("Signature verification failed", e))?;
 
@@ -45,49 +92,37 @@ pub async fn upload(
         client_id
     );
 
-    let file_content = decode_and_verify_file_content(&req)?;
-
     // Store file and metadata atomically
     state
         .storage
-        .store_file_with_metadata(&client_id, &req.batch_id, &req.filename, &file_content)
+        .store_file_with_metadata(&client_id, &batch_id, &filename, &file_content)
         .await
         .map_err(|e| handle_server_error("Failed to store file and metadata", e))?;
 
     info!(
-        "POST /upload - File uploaded: {} (client: {}, batch: {})",
-        req.filename, client_id, req.batch_id
+        filename = ?filename,
+        client_id = ?client_id,
+        batch_id = ?batch_id,
+        "POST /upload - File uploaded"
     );
 
     Ok(HttpResponse::Ok().finish())
 }
 
 /// Build message for upload signature verification
-fn build_message(req: &UploadRequest) -> Vec<u8> {
+/// Signs raw file bytes
+fn build_message(
+    filename: &str,
+    batch_id: &str,
+    file_hash: &str,
+    file_content: &[u8],
+    timestamp: u64,
+) -> Vec<u8> {
     let mut message = Vec::new();
-    message.extend_from_slice(req.filename.as_bytes());
-    message.extend_from_slice(req.batch_id.as_bytes());
-    message.extend_from_slice(req.file_hash.as_bytes());
-    message.extend_from_slice(req.file_content.as_bytes());
-    message.extend_from_slice(&req.timestamp.to_be_bytes());
+    message.extend_from_slice(filename.as_bytes());
+    message.extend_from_slice(batch_id.as_bytes());
+    message.extend_from_slice(file_hash.as_bytes());
+    message.extend_from_slice(file_content);
+    message.extend_from_slice(&timestamp.to_be_bytes());
     message
-}
-
-/// Decode file content and verify hash
-fn decode_and_verify_file_content(req: &UploadRequest) -> ActixResult<Vec<u8>> {
-    let file_content = STANDARD
-        .decode(&req.file_content)
-        .map_err(|e| handle_error("Failed to decode file content", e))?;
-
-    // Verify file hash matches content
-    let computed_hash = hash_leaf(&file_content);
-    let computed_hash_hex = hex::encode(computed_hash);
-    if computed_hash_hex != req.file_hash {
-        return Err(actix_web::error::ErrorBadRequest(format!(
-            "File hash mismatch: expected {}, got {}",
-            req.file_hash, computed_hash_hex
-        )));
-    }
-
-    Ok(file_content)
 }

@@ -136,4 +136,27 @@ impl AuthVerifier {
             DEFAULT_MAX_CLOCK_SKEW_SECONDS,
         )
     }
+
+    /// Validate public key format and ensure it's a valid Ed25519 key
+    /// Checks:
+    /// - Key is valid hex encoding
+    /// - Key length is exactly 32 bytes (Ed25519 public key size)
+    /// - Key can be parsed as a valid Ed25519 VerifyingKey
+    pub fn validate_public_key(public_key_hex: &str) -> Result<()> {
+        let public_key_bytes =
+            hex::decode(public_key_hex.trim()).context("Failed to decode public key hex")?;
+
+        if public_key_bytes.len() != 32 {
+            anyhow::bail!(
+                "Invalid public key length: expected 32 bytes (Ed25519), got {} bytes",
+                public_key_bytes.len()
+            );
+        }
+
+        // Try to parse as Ed25519 key - this validates the key format
+        public_key_from_bytes(&public_key_bytes)
+            .context("Invalid Ed25519 public key format")?;
+
+        Ok(())
+    }
 }
