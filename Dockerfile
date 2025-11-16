@@ -18,6 +18,7 @@ COPY Cargo.toml ./
 COPY crates ./crates
 COPY bin/server/Cargo.toml ./bin/server/
 COPY bin/client/Cargo.toml ./bin/client/
+COPY tests/e2e/Cargo.toml ./tests/e2e/
 
 # Create dummy source files for dependency compilation caching
 # Note: Client dummy is needed because workspace includes it, but we only build the server binary
