@@ -173,5 +173,4 @@ impl Storage for FilesystemStorage {
             hex::decode(public_key_hex.trim()).context("Failed to decode public key")?;
         Ok(Some(public_key_bytes))
     }
-
 }
