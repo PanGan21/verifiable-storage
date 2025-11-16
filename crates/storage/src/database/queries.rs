@@ -190,14 +190,4 @@ impl Queries {
 
         Ok(row.map(|(key,)| key))
     }
-
-    /// List all client IDs
-    pub async fn list_client_ids(pool: &PgPool) -> Result<Vec<String>> {
-        let rows = sqlx::query_as::<_, (String,)>("SELECT client_id FROM clients")
-            .fetch_all(pool)
-            .await
-            .context("Failed to list client IDs")?;
-
-        Ok(rows.into_iter().map(|(client_id,)| client_id).collect())
-    }
 }

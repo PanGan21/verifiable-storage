@@ -67,23 +67,6 @@ impl FilesystemStorage {
 
 #[async_trait]
 impl Storage for FilesystemStorage {
-    async fn store_file(
-        &self,
-        client_id: &str,
-        batch_id: &str,
-        filename: &str,
-        content: &[u8],
-    ) -> Result<()> {
-        let batch_dir = self.batch_dir(client_id, batch_id);
-        let file_path = self.file_path(client_id, batch_id, filename);
-
-        tokio::fs::create_dir_all(&batch_dir)
-            .await
-            .context("Failed to create batch directory")?;
-        Self::write_file_atomic(&file_path, content).await?;
-        Ok(())
-    }
-
     async fn store_file_with_metadata(
         &self,
         client_id: &str,
@@ -127,16 +110,6 @@ impl Storage for FilesystemStorage {
         tokio::fs::read(&file_path)
             .await
             .with_context(|| format!("Failed to read file: {:?}", file_path))
-    }
-
-    async fn add_filename_to_metadata(
-        &self,
-        client_id: &str,
-        batch_id: &str,
-        filename: &str,
-    ) -> Result<()> {
-        let metadata_file = self.metadata_path(client_id, batch_id);
-        Metadata::add_filename(&metadata_file, filename).await
     }
 
     async fn load_batch_filenames(&self, client_id: &str, batch_id: &str) -> Result<Vec<String>> {
@@ -201,28 +174,4 @@ impl Storage for FilesystemStorage {
         Ok(Some(public_key_bytes))
     }
 
-    async fn list_client_ids(&self) -> Result<Vec<String>> {
-        if !self.data_dir.exists() {
-            return Ok(Vec::new());
-        }
-
-        let mut client_ids = Vec::new();
-        let mut entries = tokio::fs::read_dir(&self.data_dir)
-            .await
-            .context("Failed to read data directory")?;
-
-        while let Some(entry) = entries.next_entry().await? {
-            let client_dir = entry.path();
-            if client_dir.is_dir() {
-                if let Some(client_id) = client_dir.file_name().and_then(|n| n.to_str()) {
-                    let public_key_file = self.public_key_path(client_id);
-                    if public_key_file.exists() {
-                        client_ids.push(client_id.to_string());
-                    }
-                }
-            }
-        }
-
-        Ok(client_ids)
-    }
 }
