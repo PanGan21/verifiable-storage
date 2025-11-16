@@ -1,5 +1,4 @@
 use sha2::{Digest, Sha256};
-use std::fmt;
 use thiserror::Error;
 
 pub mod proof;
@@ -126,31 +125,6 @@ impl MerkleTree {
             path,
         })
     }
-
-    /// Verify a Merkle proof against the stored root hash.
-    /// This reconstructs the root hash from the proof and compares it
-    /// with the stored root hash.
-    pub fn verify_proof(&self, proof: &MerkleProof) -> Result<bool, MerkleTreeError> {
-        let computed_root = proof.compute_root()?;
-        Ok(computed_root == self.root)
-    }
-
-    /// Verify a Merkle proof given only the root hash.
-    /// This is a static method that can be used when only the root hash
-    /// and a proof are provided, without the full tree.
-    pub fn verify_proof_with_root(
-        root_hash: &[u8; 32],
-        proof: &MerkleProof,
-    ) -> Result<bool, MerkleTreeError> {
-        let computed_root = proof.compute_root()?;
-        Ok(computed_root == *root_hash)
-    }
-}
-
-impl fmt::Display for MerkleTree {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "MerkleTree(root: {})", hex::encode(self.root))
-    }
 }
 
 /// Hash a single data item (leaf node) using SHA-256.
@@ -195,25 +169,30 @@ mod tests {
     fn test_two_items() {
         let data = vec![b"file1".to_vec(), b"file2".to_vec()];
         let tree = MerkleTree::from_data(&data).unwrap();
+        let root = tree.root_hash();
 
         // Verify proof for first item
         let proof = tree.generate_proof(0).unwrap();
-        assert!(tree.verify_proof(&proof).unwrap());
+        let computed_root = proof.compute_root().unwrap();
+        assert_eq!(computed_root, root);
 
         // Verify proof for second item
         let proof2 = tree.generate_proof(1).unwrap();
-        assert!(tree.verify_proof(&proof2).unwrap());
+        let computed_root2 = proof2.compute_root().unwrap();
+        assert_eq!(computed_root2, root);
     }
 
     #[test]
     fn test_three_items() {
         let data = vec![b"file1".to_vec(), b"file2".to_vec(), b"file3".to_vec()];
         let tree = MerkleTree::from_data(&data).unwrap();
+        let root = tree.root_hash();
 
         // Verify all proofs
         for i in 0..3 {
             let proof = tree.generate_proof(i).unwrap();
-            assert!(tree.verify_proof(&proof).unwrap());
+            let computed_root = proof.compute_root().unwrap();
+            assert_eq!(computed_root, root);
         }
     }
 
@@ -224,27 +203,30 @@ mod tests {
         let root = tree.root_hash();
         let proof = tree.generate_proof(1).unwrap();
 
-        // Verify using static method
-        assert!(MerkleTree::verify_proof_with_root(&root, &proof).unwrap());
+        // Verify using compute_root
+        let computed_root = proof.compute_root().unwrap();
+        assert_eq!(computed_root, root);
 
         // Also verify that wrong root fails
         let mut wrong_root = root;
         wrong_root[0] ^= 0xFF;
-        assert!(!MerkleTree::verify_proof_with_root(&wrong_root, &proof).unwrap());
+        assert_ne!(computed_root, wrong_root);
     }
 
     #[test]
     fn test_invalid_proof() {
         let data = vec![b"file1".to_vec(), b"file2".to_vec()];
         let tree = MerkleTree::from_data(&data).unwrap();
+        let root = tree.root_hash();
         let proof = tree.generate_proof(0).unwrap();
 
         // Modify the proof
         let mut bad_proof = proof.clone();
         bad_proof.path[0].hash[0] ^= 0xFF;
 
-        // Should fail verification
-        assert!(!tree.verify_proof(&bad_proof).unwrap());
+        // Should fail verification - computed root won't match
+        let computed_root = bad_proof.compute_root().unwrap();
+        assert_ne!(computed_root, root);
     }
 
     #[test]
