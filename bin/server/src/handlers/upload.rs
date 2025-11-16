@@ -19,7 +19,7 @@ pub async fn upload(
 
     // Validate form fields (length, format checks)
     form.validate_fields()
-        .map_err(|e| actix_web::error::ErrorBadRequest(e))?;
+        .map_err(actix_web::error::ErrorBadRequest)?;
 
     // Extract all fields from multipart form
     let UploadForm {

@@ -80,10 +80,7 @@ async fn main() -> std::io::Result<()> {
     let server = HttpServer::new(move || {
         App::new()
             .app_data(state.clone())
-            .app_data(
-                web::PayloadConfig::default()
-                    .limit(crate::constants::MAX_UPLOAD_SIZE_BYTES)
-            )
+            .app_data(web::PayloadConfig::default().limit(crate::constants::MAX_UPLOAD_SIZE_BYTES))
             .service(handlers::upload::upload)
             .service(handlers::download::download)
             .service(handlers::health::health)

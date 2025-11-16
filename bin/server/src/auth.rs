@@ -154,8 +154,7 @@ impl AuthVerifier {
         }
 
         // Try to parse as Ed25519 key - this validates the key format
-        public_key_from_bytes(&public_key_bytes)
-            .context("Invalid Ed25519 public key format")?;
+        public_key_from_bytes(&public_key_bytes).context("Invalid Ed25519 public key format")?;
 
         Ok(())
     }
