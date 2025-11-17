@@ -16,9 +16,11 @@ pub async fn download(
 ) -> ActixResult<HttpResponse> {
     let req = query.into_inner();
 
+    // Use structured logging that escapes control characters for security
     info!(
-        "GET /download - Request received: filename={}, batch_id={}",
-        req.filename, req.batch_id
+        filename = ?req.filename,
+        batch_id = ?req.batch_id,
+        "GET /download - Request received"
     );
 
     // Validate filename to prevent path traversal attacks
@@ -46,8 +48,8 @@ pub async fn download(
     let client_id = req.client_id.clone();
 
     info!(
-        "GET /download - Signature verified for client: {}",
-        client_id
+        client_id = ?client_id,
+        "GET /download - Signature verified"
     );
 
     let filenames = state

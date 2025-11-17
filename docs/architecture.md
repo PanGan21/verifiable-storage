@@ -32,8 +32,9 @@ The system requirements are:
 1. **Custom Merkle Tree**: Domain-separated implementation (0x00 for leaves, 0x01 for internal nodes)
 2. **Storage Abstraction**: Trait-based design supports filesystem and PostgreSQL backends
 3. **Authentication**: Ed25519 signatures on all requests with auto-registration
-4. **Security**: Filename validation, timestamp validation, atomic operations
+4. **Security**: Filename validation, timestamp validation, log sanitization, atomic operations
 5. **Batch Organization**: Files organized by batch_id for logical grouping
+6. **Multipart File Uploads**: Standard HTTP multipart/form-data format for efficient file transfers
 
 ## Key Features
 
@@ -64,7 +65,10 @@ Ed25519 signature-based authentication:
 
 **Replay Attack Prevention**: Timestamp validation on all requests (default: 5 minutes max age, 1 minute clock skew)
 
-**Atomic Operations**: 
+**Log Sanitization**: Uses `tracing` structured logging with Debug formatter to automatically escape control characters and prevent log injection
+
+**Atomic Operations**:
+
 - Database: PostgreSQL transactions ensure file and metadata are stored atomically
 - Filesystem: `fsync()` ensures data persistence
 
@@ -190,8 +194,10 @@ Proof for File0: [Hash1, Hash23] (siblings along path to root)
 4. Client builds Merkle tree from all files
 5. Client computes root hash
 6. For each file:
-   - Client signs request (filename, batch_id, file_hash, content, timestamp)
-   - Client sends POST /upload with signature and public key
+   - Client builds message: filename || batch_id || file_hash || file_content || timestamp
+   - Client signs message with Ed25519 private key
+   - Client sends POST /upload with multipart/form-data (file + metadata fields)
+   - Server validates form fields (length, format)
    - Server validates filename (path traversal protection)
    - Server validates timestamp (replay attack prevention)
    - Server verifies signature
@@ -204,17 +210,18 @@ Proof for File0: [Hash1, Hash23] (siblings along path to root)
 ```
 1. Client loads root hash from local storage
 2. Client validates filename (prevents path traversal)
-3. Client signs request (filename, batch_id, timestamp)
-4. Client sends GET /download with signature
-5. Server validates filename (path traversal protection)
-6. Server validates timestamp (replay attack prevention)
-7. Server verifies signature
-8. Server loads batch metadata (filenames)
-9. Server reads all files in batch
-10. Server builds Merkle tree (sorted by filename)
-11. Server generates proof for requested file
-12. Server returns file hash and proof
-13. Client verifies proof against stored root hash
+3. Client builds message: filename || batch_id || timestamp
+4. Client signs message with Ed25519 private key
+5. Client sends GET /download with signature (query parameters)
+6. Server validates filename (path traversal protection)
+7. Server validates timestamp (replay attack prevention)
+8. Server verifies signature
+9. Server loads batch metadata (filenames)
+10. Server reads all files in batch
+11. Server builds Merkle tree (sorted by filename)
+12. Server generates proof for requested file
+13. Server returns file hash and proof (JSON response with base64-encoded file)
+14. Client verifies proof against stored root hash
 ```
 
 ## Design Decisions
@@ -268,6 +275,7 @@ Use different prefixes for leaf nodes (0x00) and internal nodes (0x01) to preven
 ### Storage Structure
 
 **Filesystem:**
+
 ```
 server_data/
     {client_id}/
@@ -278,6 +286,7 @@ server_data/
 ```
 
 **Database:**
+
 - `clients`: client_id, public_key
 - `batches`: client_id, batch_id
 - `files`: client_id, batch_id, filename, content
@@ -347,7 +356,6 @@ server_data/
 - **Filesystem**: Single instance, development/small deployments
 - **Database**: Multiple instances, horizontal scaling, shared state via PostgreSQL
 
-
 ## Future Improvements
 
 ### High Priority
@@ -355,7 +363,14 @@ server_data/
 - **Precompute and Persist Merkle Tree Nodes**: Store tree structure for large batches to generate proofs quickly
 - **Cache Leaf Hashes**: Store leaf hashes on upload to avoid reading content to recompute
 - **TLS & Hardened Deployment**: Server must be behind TLS in production (document setup)
-- **Rate Limiting and Quotas**: Per-client rate limiting and storage quotas
+- **Rate Limiting**:
+  - Per-client rate limiting (requests per minute/hour)
+  - Per-IP rate limiting for unauthenticated endpoints (health check)
+  - Configurable limits via environment variables or config file
+  - Token bucket or sliding window algorithm
+  - Return 429 Too Many Requests with Retry-After header
+  - Integration with Actix Web middleware (e.g., `actix-governor` or custom middleware)
+- **Storage Quotas**: Per-client storage quotas (max files, max total size per batch)
 - **Key Rotation, Revocation, and Admin Controls**: Key rotation endpoint, revocation, admin controls for batch management
 
 ### Medium Priority
@@ -374,7 +389,6 @@ server_data/
 - **Event Sourcing**: Store upload/download events for audit trail
 - **CQRS**: Separate read/write models for scalability
 - **Microservices**: Split into upload/download/storage services
-
 
 ## Deployment
 
@@ -395,6 +409,7 @@ docker compose up --build
 The server will be available at `http://localhost:8080` with PostgreSQL database storage. Configuration is handled through environment variables in `docker-compose.yml`.
 
 **For Production**:
+
 1. Deploy behind nginx/traefik with TLS certificates (Let's Encrypt)
 2. Configure reverse proxy to forward requests to server
 3. Enable rate limiting at the proxy level
@@ -456,6 +471,7 @@ cargo run --release --bin server -- --storage db
 ### Configuration
 
 Server configuration via environment variables:
+
 - `SERVER_HOST`: Server host (default: `0.0.0.0`)
 - `SERVER_PORT`: Server port (default: `8080`)
 - `DATABASE_URL`: PostgreSQL connection string (required for database storage)

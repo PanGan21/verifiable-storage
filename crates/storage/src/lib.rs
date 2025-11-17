@@ -11,15 +11,6 @@ pub use database::DatabaseRetryConfig;
 /// Storage backend trait for file and metadata operations
 #[async_trait]
 pub trait Storage: Send + Sync {
-    /// Store a file in a batch
-    async fn store_file(
-        &self,
-        client_id: &str,
-        batch_id: &str,
-        filename: &str,
-        content: &[u8],
-    ) -> Result<()>;
-
     /// Store a file and add it to metadata atomically
     /// For database: uses a transaction
     /// For filesystem: uses atomic file operations (temp file + fsync + rename)
@@ -33,14 +24,6 @@ pub trait Storage: Send + Sync {
 
     /// Read a file from a batch
     async fn read_file(&self, client_id: &str, batch_id: &str, filename: &str) -> Result<Vec<u8>>;
-
-    /// Add a filename to batch metadata
-    async fn add_filename_to_metadata(
-        &self,
-        client_id: &str,
-        batch_id: &str,
-        filename: &str,
-    ) -> Result<()>;
 
     /// Load all filenames from batch metadata
     async fn load_batch_filenames(&self, client_id: &str, batch_id: &str) -> Result<Vec<String>>;
@@ -61,7 +44,4 @@ pub trait Storage: Send + Sync {
 
     /// Load a client's public key
     async fn load_public_key(&self, client_id: &str) -> Result<Option<Vec<u8>>>;
-
-    /// List all client IDs that have public keys stored
-    async fn list_client_ids(&self) -> Result<Vec<String>>;
 }

@@ -130,26 +130,6 @@ fn calculate_retry_delay(attempt: u32, initial_delay_seconds: u64) -> Duration {
 
 #[async_trait]
 impl Storage for DatabaseStorage {
-    async fn store_file(
-        &self,
-        client_id: &str,
-        batch_id: &str,
-        filename: &str,
-        content: &[u8],
-    ) -> Result<()> {
-        let mut tx = self
-            .pool
-            .begin()
-            .await
-            .context("Failed to begin transaction")?;
-
-        Queries::ensure_batch(&mut *tx, client_id, batch_id).await?;
-        Queries::store_file(&mut *tx, client_id, batch_id, filename, content).await?;
-
-        tx.commit().await.context("Failed to commit transaction")?;
-        Ok(())
-    }
-
     async fn store_file_with_metadata(
         &self,
         client_id: &str,
@@ -187,15 +167,6 @@ impl Storage for DatabaseStorage {
             })
     }
 
-    async fn add_filename_to_metadata(
-        &self,
-        client_id: &str,
-        batch_id: &str,
-        filename: &str,
-    ) -> Result<()> {
-        Queries::add_filename_to_metadata(&self.pool, client_id, batch_id, filename).await
-    }
-
     async fn load_batch_filenames(&self, client_id: &str, batch_id: &str) -> Result<Vec<String>> {
         if !Queries::batch_exists(&self.pool, client_id, batch_id).await? {
             anyhow::bail!("Batch {} not found for client {}", batch_id, client_id);
@@ -222,9 +193,5 @@ impl Storage for DatabaseStorage {
 
     async fn load_public_key(&self, client_id: &str) -> Result<Option<Vec<u8>>> {
         Queries::load_public_key(&self.pool, client_id).await
-    }
-
-    async fn list_client_ids(&self) -> Result<Vec<String>> {
-        Queries::list_client_ids(&self.pool).await
     }
 }

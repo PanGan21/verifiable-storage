@@ -43,11 +43,6 @@ impl MerkleProof {
 
         Ok(current_hash)
     }
-
-    /// Get the leaf hash as a hex string.
-    pub fn leaf_hash_hex(&self) -> String {
-        hex::encode(self.leaf_hash)
-    }
 }
 
 /// Hash a pair of hashes together (internal node) using SHA-256.

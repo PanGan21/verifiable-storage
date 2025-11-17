@@ -7,27 +7,10 @@ use tokio::io::AsyncWriteExt;
 pub struct Metadata;
 
 impl Metadata {
-    /// Add filename to metadata file
-    pub async fn add_filename(metadata_file: &Path, filename: &str) -> Result<()> {
-        let mut metadata = Self::load_or_create(metadata_file).await?;
-        Self::insert_filename(&mut metadata, filename);
-        Self::save(metadata_file, &metadata).await?;
-        Ok(())
-    }
-
     /// Load filenames from metadata file
     pub async fn load_filenames(metadata_file: &Path) -> Result<Vec<String>> {
         let metadata = Self::load(metadata_file).await?;
         Self::extract_filenames(&metadata)
-    }
-
-    /// Load metadata or create empty metadata
-    async fn load_or_create(metadata_file: &Path) -> Result<Map<String, Value>> {
-        if metadata_file.exists() {
-            Self::load(metadata_file).await
-        } else {
-            Ok(Map::new())
-        }
     }
 
     /// Load metadata from file (public for use in atomic operations)
@@ -65,16 +48,6 @@ impl Metadata {
                     .filter_map(|v| v.as_str().map(|s| s.to_string()))
                     .collect()
             })
-    }
-
-    /// Save metadata to file (non-atomic, for backwards compatibility)
-    async fn save(metadata_file: &Path, metadata: &Map<String, Value>) -> Result<()> {
-        let metadata_json =
-            serde_json::to_string_pretty(metadata).context("Failed to serialize metadata")?;
-        tokio::fs::write(metadata_file, metadata_json)
-            .await
-            .context("Failed to write metadata")?;
-        Ok(())
     }
 
     /// Save metadata to file with fsync to ensure data is persisted

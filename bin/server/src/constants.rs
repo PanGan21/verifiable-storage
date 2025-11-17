@@ -18,3 +18,6 @@ pub const STORAGE_TYPE_DATABASE: &str = "db";
 
 /// Storage type identifier for filesystem (also used as the default storage type)
 pub const STORAGE_TYPE_FILESYSTEM: &str = "fs";
+
+/// Maximum upload payload size in bytes (10 MB)
+pub const MAX_UPLOAD_SIZE_BYTES: usize = 10 * 1024 * 1024;

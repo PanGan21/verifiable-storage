@@ -10,15 +10,6 @@ use reqwest::blocking::Client;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// Get current timestamp in milliseconds since Unix epoch
-/// Used to ensure each signature is unique, even for identical requests
-fn get_current_timestamp_ms() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_millis() as u64
-}
-
 /// Helper to decode hex string to fixed-size array
 fn hex_decode_array<const N: usize>(s: &str) -> Result<[u8; N]> {
     let bytes = hex::decode(s.trim())?;
@@ -128,7 +119,7 @@ impl FileDownloader {
     /// Request file hash and Merkle proof from server
     fn request_file_proof(&self, filename: &str) -> Result<DownloadResponse> {
         // Create message to sign
-        let timestamp = self.get_current_timestamp();
+        let timestamp = common::get_current_timestamp_ms();
         let message = self.build_download_message(filename, timestamp);
 
         // Sign message
@@ -248,11 +239,6 @@ impl FileDownloader {
         message.extend_from_slice(self.batch_id.as_bytes());
         message.extend_from_slice(&timestamp.to_be_bytes());
         message
-    }
-
-    /// Get current timestamp
-    fn get_current_timestamp(&self) -> u64 {
-        get_current_timestamp_ms()
     }
 
     /// Save downloaded file to disk

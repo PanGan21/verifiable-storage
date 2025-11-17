@@ -26,4 +26,5 @@ crypto = { path = "../../crates/crypto" }
 common = { path = "../../crates/common" }
 storage = { path = "../../crates/storage" }
 clap = { workspace = true }
+actix-multipart = { workspace = true }
 
