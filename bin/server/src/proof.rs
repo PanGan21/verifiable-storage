@@ -1,9 +1,6 @@
 use crate::state::AppState;
 use actix_web::web;
-use base64::engine::general_purpose::STANDARD;
-use base64::Engine;
 use common::ProofNodeJson;
-use crypto::hash_leaf;
 use tracing::error;
 
 use crate::handlers::error::handle_server_error;
@@ -77,12 +74,4 @@ pub fn proof_to_json(proof: &merkle_tree::MerkleProof) -> Vec<ProofNodeJson> {
             is_left: p.is_left,
         })
         .collect()
-}
-
-/// Prepare file data for download response
-pub fn prepare_file_data(file_content: &[u8]) -> (String, String) {
-    let file_hash = hash_leaf(file_content);
-    let file_hash_hex = hex::encode(file_hash);
-    let file_content_b64 = STANDARD.encode(file_content);
-    (file_hash_hex, file_content_b64)
 }

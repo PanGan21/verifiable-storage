@@ -2,9 +2,11 @@ use crate::auth::AuthVerifier;
 use crate::handlers::error::{
     handle_auth_error, handle_error, handle_not_found, handle_server_error,
 };
-use crate::proof::{generate_proof, prepare_file_data, proof_to_json};
+use crate::proof::{generate_proof, proof_to_json};
 use crate::state::AppState;
 use actix_web::{get, web, HttpResponse, Result as ActixResult};
+use base64::engine::general_purpose::STANDARD;
+use base64::Engine;
 use common::{file_utils, DownloadRequest, DownloadResponse};
 use tracing::info;
 
@@ -85,7 +87,7 @@ pub async fn download(
         .await
         .map_err(|e| handle_server_error("Failed to read file", e))?;
 
-    let (file_hash_hex, file_content_b64) = prepare_file_data(&file_content);
+    let file_content_b64 = STANDARD.encode(&file_content);
 
     // Generate Merkle proof
     let proof =
@@ -93,14 +95,13 @@ pub async fn download(
     let proof_json = proof_to_json(&proof);
 
     info!(
-        "GET /download - File hash and proof for {} (proof length: {})",
+        "GET /download - File and proof for {} (proof length: {})",
         req.filename,
         proof_json.len()
     );
 
     Ok(HttpResponse::Ok().json(DownloadResponse {
         filename: req.filename,
-        file_hash: file_hash_hex,
         file_content: file_content_b64,
         merkle_proof: proof_json,
     }))

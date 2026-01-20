@@ -1,6 +1,7 @@
 use crate::constants::{FILENAMES_FILE, ROOT_HASH_FILE, UPLOAD_ENDPOINT};
 use anyhow::{Context, Result};
 use common::file_utils;
+use common::utils::get_current_timestamp_ms;
 use crypto::{encrypt_file, hash_leaf, sign_message};
 use ed25519_dalek::SigningKey;
 use log::info;
@@ -67,8 +68,9 @@ impl FileUploader {
         let encrypted_file_list: Vec<(String, Vec<u8>)> = file_list
             .iter()
             .map(|(filename, plaintext)| {
-                let encrypted = encrypt_file(&self.signing_key, filename, &self.batch_id, plaintext)
-                    .with_context(|| format!("Failed to encrypt file: {}", filename))?;
+                let encrypted =
+                    encrypt_file(&self.signing_key, filename, &self.batch_id, plaintext)
+                        .with_context(|| format!("Failed to encrypt file: {}", filename))?;
                 Ok((filename.clone(), encrypted))
             })
             .collect::<Result<Vec<_>>>()?;
@@ -86,7 +88,10 @@ impl FileUploader {
                 .root_hash(),
         );
 
-        info!("Uploading files (computed root hash from encrypted data: {})", root_hash_hex);
+        info!(
+            "Uploading files (computed root hash from encrypted data: {})",
+            root_hash_hex
+        );
 
         // Upload each encrypted file
         self.upload_files_to_server(&encrypted_file_list)?;
@@ -190,7 +195,7 @@ impl FileUploader {
         let leaf_hash_hex = hex::encode(leaf_hash);
 
         // Create message to sign using encrypted file bytes
-        let timestamp = common::get_current_timestamp_ms();
+        let timestamp = get_current_timestamp_ms();
         let message = self.build_upload_message(filename, &leaf_hash_hex, content, timestamp);
 
         // Sign message

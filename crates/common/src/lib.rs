@@ -1,15 +1,7 @@
 pub mod file_utils;
+pub mod utils;
 
 use serde::{Deserialize, Serialize};
-
-/// Get current timestamp in milliseconds since Unix epoch
-/// Used to ensure each signature is unique, even for identical requests
-pub fn get_current_timestamp_ms() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_millis() as u64
-}
 
 /// Request to download a file from the server (query parameters)
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -22,12 +14,11 @@ pub struct DownloadRequest {
 }
 
 /// Download response containing file data and Merkle proof
-/// Note: Server returns file content, file hash, and proof - not the root hash
-/// Client verifies proof against stored root hash, then saves the file content
+/// Note: Server returns file content and proof - not the root hash
+/// Client computes file hash from content and verifies proof against stored root hash
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct DownloadResponse {
     pub filename: String,     // Original filename
-    pub file_hash: String,    // hex-encoded leaf hash of the requested file
     pub file_content: String, // base64-encoded file content
     pub merkle_proof: Vec<ProofNodeJson>,
 }
