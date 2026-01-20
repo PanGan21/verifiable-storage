@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use merkle_tree::MerkleTree;
 use sqlx::PgPool;
 
 /// Query operations for database storage
@@ -136,35 +137,6 @@ impl Queries {
         Ok(rows.into_iter().map(|(filename,)| filename).collect())
     }
 
-    /// Read multiple files from a batch
-    pub async fn read_batch_files(
-        pool: &PgPool,
-        client_id: &str,
-        batch_id: &str,
-        filenames: &[String],
-    ) -> Result<Vec<Vec<u8>>> {
-        let mut file_data = Vec::new();
-
-        for filename in filenames {
-            let row = sqlx::query_as::<_, (Vec<u8>,)>(
-                "SELECT content FROM files WHERE client_id = $1 AND batch_id = $2 AND filename = $3",
-            )
-            .bind(client_id)
-            .bind(batch_id)
-            .bind(filename)
-            .fetch_optional(pool)
-            .await
-            .with_context(|| format!("Failed to read file {}", filename))?;
-
-            match row {
-                Some((content,)) => file_data.push(content),
-                None => anyhow::bail!("File {} not found in batch {}", filename, batch_id),
-            }
-        }
-
-        Ok(file_data)
-    }
-
     /// Store public key
     pub async fn store_public_key(pool: &PgPool, client_id: &str, public_key: &[u8]) -> Result<()> {
         sqlx::query(
@@ -189,5 +161,104 @@ impl Queries {
                 .context("Failed to load public key")?;
 
         Ok(row.map(|(key,)| key))
+    }
+
+    /// Store leaf hash for a file
+    pub async fn store_leaf_hash(
+        pool: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+        client_id: &str,
+        batch_id: &str,
+        filename: &str,
+        leaf_hash: &[u8; 32],
+    ) -> Result<()> {
+        sqlx::query(
+            "INSERT INTO leaf_hashes (client_id, batch_id, filename, leaf_hash) 
+             VALUES ($1, $2, $3, $4)
+             ON CONFLICT (client_id, batch_id, filename) DO UPDATE SET leaf_hash = EXCLUDED.leaf_hash",
+        )
+        .bind(client_id)
+        .bind(batch_id)
+        .bind(filename)
+        .bind(leaf_hash.as_slice())
+        .execute(pool)
+        .await
+        .context("Failed to store leaf hash")?;
+        Ok(())
+    }
+
+    /// Load all leaf hashes for a batch (sorted by filename)
+    pub async fn load_batch_leaf_hashes(
+        pool: &PgPool,
+        client_id: &str,
+        batch_id: &str,
+    ) -> Result<Vec<[u8; 32]>> {
+        let rows = sqlx::query_as::<_, (Vec<u8>,)>(
+            "SELECT leaf_hash FROM leaf_hashes 
+             WHERE client_id = $1 AND batch_id = $2 
+             ORDER BY filename",
+        )
+        .bind(client_id)
+        .bind(batch_id)
+        .fetch_all(pool)
+        .await
+        .context("Failed to load batch leaf hashes")?;
+
+        let mut hashes = Vec::new();
+        for (hash_bytes,) in rows {
+            let mut hash = [0u8; 32];
+            hash.copy_from_slice(&hash_bytes);
+            hashes.push(hash);
+        }
+
+        Ok(hashes)
+    }
+
+    /// Store Merkle tree structure
+    pub async fn store_merkle_tree(
+        pool: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+        client_id: &str,
+        batch_id: &str,
+        tree: &MerkleTree,
+    ) -> Result<()> {
+        let tree_json = serde_json::to_value(tree).context("Failed to serialize Merkle tree")?;
+
+        sqlx::query(
+            "INSERT INTO merkle_trees (client_id, batch_id, tree_data) 
+             VALUES ($1, $2, $3)
+             ON CONFLICT (client_id, batch_id) 
+             DO UPDATE SET tree_data = EXCLUDED.tree_data, updated_at = CURRENT_TIMESTAMP",
+        )
+        .bind(client_id)
+        .bind(batch_id)
+        .bind(tree_json)
+        .execute(pool)
+        .await
+        .context("Failed to store Merkle tree")?;
+        Ok(())
+    }
+
+    /// Load Merkle tree structure
+    pub async fn load_merkle_tree(
+        pool: &PgPool,
+        client_id: &str,
+        batch_id: &str,
+    ) -> Result<Option<MerkleTree>> {
+        let row = sqlx::query_as::<_, (serde_json::Value,)>(
+            "SELECT tree_data FROM merkle_trees WHERE client_id = $1 AND batch_id = $2",
+        )
+        .bind(client_id)
+        .bind(batch_id)
+        .fetch_optional(pool)
+        .await
+        .context("Failed to load Merkle tree")?;
+
+        match row {
+            Some((tree_json,)) => {
+                let tree: MerkleTree = serde_json::from_value(tree_json)
+                    .context("Failed to deserialize Merkle tree")?;
+                Ok(Some(tree))
+            }
+            None => Ok(None),
+        }
     }
 }

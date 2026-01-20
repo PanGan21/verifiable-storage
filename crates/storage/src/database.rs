@@ -178,20 +178,58 @@ impl Storage for DatabaseStorage {
         Queries::file_exists(&self.pool, client_id, batch_id, filename).await
     }
 
-    async fn read_batch_files(
-        &self,
-        client_id: &str,
-        batch_id: &str,
-        filenames: &[String],
-    ) -> Result<Vec<Vec<u8>>> {
-        Queries::read_batch_files(&self.pool, client_id, batch_id, filenames).await
-    }
-
     async fn store_public_key(&self, client_id: &str, public_key: &[u8]) -> Result<()> {
         Queries::store_public_key(&self.pool, client_id, public_key).await
     }
 
     async fn load_public_key(&self, client_id: &str) -> Result<Option<Vec<u8>>> {
         Queries::load_public_key(&self.pool, client_id).await
+    }
+
+    async fn store_merkle_tree(
+        &self,
+        client_id: &str,
+        batch_id: &str,
+        tree: &merkle_tree::MerkleTree,
+    ) -> Result<()> {
+        Queries::store_merkle_tree(&self.pool, client_id, batch_id, tree).await
+    }
+
+    async fn load_merkle_tree(
+        &self,
+        client_id: &str,
+        batch_id: &str,
+    ) -> Result<Option<merkle_tree::MerkleTree>> {
+        Queries::load_merkle_tree(&self.pool, client_id, batch_id).await
+    }
+
+    async fn store_leaf_hash(
+        &self,
+        client_id: &str,
+        batch_id: &str,
+        filename: &str,
+        leaf_hash: &[u8; 32],
+    ) -> Result<()> {
+        // Use a transaction to ensure consistency
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .context("Failed to begin transaction")?;
+
+        Queries::store_leaf_hash(&mut *tx, client_id, batch_id, filename, leaf_hash).await?;
+
+        tx.commit()
+            .await
+            .context("Failed to commit transaction for leaf hash storage")?;
+        Ok(())
+    }
+
+    async fn load_batch_leaf_hashes(
+        &self,
+        client_id: &str,
+        batch_id: &str,
+    ) -> Result<Vec<[u8; 32]>> {
+        Queries::load_batch_leaf_hashes(&self.pool, client_id, batch_id).await
     }
 }

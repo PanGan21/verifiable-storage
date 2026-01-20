@@ -23,7 +23,7 @@ The system requirements are:
 
 - **Cryptographic Security**: Use Ed25519 for authentication, SHA-256 for hashing
 - **Minimal Client Storage**: Client only stores root hash (32 bytes)
-- **Server Efficiency**: Server builds tree on-demand (no tree storage overhead)
+- **Server Efficiency**: Server stores Merkle tree on upload for fast proof generation
 - **Multiple storage support**: Support multiple storage backends, error handling, logging
 - **Scalability**: Database backend enables horizontal scaling
 
@@ -36,6 +36,7 @@ The system requirements are:
 5. **Security**: Filename validation, timestamp validation, log sanitization, atomic operations
 6. **Batch Organization**: Files organized by batch_id for logical grouping
 7. **Multipart File Uploads**: Standard HTTP multipart/form-data format for efficient file transfers
+8. **Merkle Tree Storage**: Tree structure computed and stored on upload for fast proof generation
 
 ## Key Features
 
@@ -44,6 +45,11 @@ The system requirements are:
 - Domain separation (0x00 for leaves, 0x01 for internal nodes) prevents second-preimage attacks
 - Efficient proof generation (O(log n) space complexity)
 - Handles odd numbers of files correctly (duplicates last node)
+- **Tree Storage**: Tree structure computed and stored on upload for fast proof generation
+  - Leaf hashes stored per file
+  - Complete tree structure stored after each upload
+  - Tree rebuilt on re-upload (handles file updates)
+  - Fast proof generation without reading files
 
 ### 2. Storage Abstraction
 
@@ -77,7 +83,7 @@ Ed25519 signature-based authentication:
 
 ### 1. Performance
 
-Server must rebuild Merkle tree on every download request. For large batches (thousands of files), tree building becomes expensive. Future improvement: precompute and persist tree nodes.
+Merkle tree is now stored on upload, enabling fast proof generation without reading files. However, tree rebuilding on upload adds some overhead. For very large batches (thousands of files), upload latency may increase slightly.
 
 ### 2. Batch Size Limits
 
@@ -99,8 +105,9 @@ Files uploaded sequentially. Future improvement: parallel uploads with bounded c
 ### 2. Server
 
 - **Authentication**: Verifies Ed25519 signatures on all requests
-- **Storage**: Stores files and metadata (filesystem or database)
-- **Proof Generation**: Builds Merkle tree on-demand and generates proofs
+- **Storage**: Stores files, metadata, and Merkle tree structures (filesystem or database)
+- **Tree Management**: Rebuilds and stores Merkle tree after each upload
+- **Proof Generation**: Uses stored Merkle tree for fast proof generation (falls back to rebuilding if missing)
 - **Auto-Registration**: Registers clients on first upload
 
 ### 3. Storage Backend
@@ -138,12 +145,17 @@ Files uploaded sequentially. Future improvement: parallel uploads with bounded c
 Client                          Server
   │                               │
   ├─ Read files                   │
+  ├─ Encrypt files                │
   ├─ Build Merkle tree            │
   ├─ Compute root hash            │
   │                               │
   ├─ Sign request ───────────────▶│
   │                               ├─ Verify signature
   │                               ├─ Store file
+  │                               ├─ Store leaf hash
+  │                               ├─ Load all leaf hashes
+  │                               ├─ Rebuild Merkle tree
+  │                               ├─ Store tree structure
   │                               ├─ Update metadata
   │◀────────────── 200 OK ────────┤
   │                               │
@@ -160,12 +172,13 @@ Client                          Server
   ├─ Sign request ───────────────▶│
   │                               ├─ Verify signature
   │                               ├─ Load batch metadata
-  │                               ├─ Read all files
-  │                               ├─ Build Merkle tree
-  │                               ├─ Generate proof
+  │                               ├─ Load stored Merkle tree
+  │                               ├─ Read requested file
+  │                               ├─ Generate proof from tree
   │◀────── File + Proof ──────────┤
   │                               │
   ├─ Verify proof                 │
+  ├─ Decrypt file                 │
   ├─ Save file                    │
   │                               │
 ```
@@ -204,6 +217,10 @@ Proof for File0: [Hash1, Hash23] (siblings along path to root)
    - Server validates timestamp (replay attack prevention)
    - Server verifies signature
    - Server stores encrypted file and metadata atomically
+   - Server stores/updates leaf hash for the file (updates if file already exists)
+   - Server loads all leaf hashes for the batch (includes updated hash for re-uploads)
+   - Server rebuilds Merkle tree from all leaf hashes
+   - Server stores/updates Merkle tree structure (updates existing tree)
 8. Client saves root hash locally (hash of encrypted Merkle tree)
 ```
 
@@ -219,9 +236,10 @@ Proof for File0: [Hash1, Hash23] (siblings along path to root)
 7. Server validates timestamp (replay attack prevention)
 8. Server verifies signature
 9. Server loads batch metadata (filenames)
-10. Server reads all encrypted files in batch
-11. Server builds Merkle tree from encrypted files (sorted by filename)
-12. Server generates proof for requested encrypted file
+10. Server loads stored Merkle tree (fast path)
+    - If tree not found or invalid, falls back to rebuilding from files
+11. Server reads requested encrypted file
+12. Server generates proof from stored Merkle tree (no file reading needed)
 13. Server returns encrypted file hash and proof (JSON response with base64-encoded encrypted file)
 14. Client verifies encrypted file hash matches downloaded encrypted content
 15. Client verifies Merkle proof against stored root hash (proof is for encrypted data)
@@ -233,9 +251,9 @@ Proof for File0: [Hash1, Hash23] (siblings along path to root)
 
 ### 1. Merkle Trees for Integrity
 
-Use Merkle trees to prove file integrity without storing full tree on server. Client stores only root hash (32 bytes), server builds tree on-demand. Proofs are compact (log(n) nodes for n files).
+Use Merkle trees to prove file integrity. Client stores only root hash (32 bytes) and computes it independently. Server stores complete tree structure after each upload for fast proof generation. Proofs are compact (log(n) nodes for n files).
 
-**Trade-off**: Server must rebuild tree on each download, but this avoids storage overhead.
+**Trade-off**: Server rebuilds and stores tree on each upload (slight latency increase), but enables fast proof generation without reading files on download.
 
 ### 2. Ed25519 Signatures
 
@@ -267,9 +285,28 @@ Store files by original filename, not content hash. Simpler API, supports multip
 
 Abstract storage behind `Storage` trait. Enables switching between filesystem (development) and database (scaling) backends.
 
-### 7. On-Demand Tree Building
+### 7. Merkle Tree Storage
 
-Build Merkle tree on server only when generating proof. No storage overhead, but requires reading all files in batch.
+**Current Implementation**: Merkle tree is computed and stored on each upload. This enables fast proof generation without reading files.
+
+**How it works**:
+
+- **On upload**: Server stores leaf hash for each file (updates if file already exists), then rebuilds tree from all leaf hashes and stores the complete tree structure (updates existing tree)
+- **On download**: Server loads stored tree and generates proof directly (O(log n) operations, no file I/O)
+- **On re-upload**: Leaf hash is updated (via `ON CONFLICT ... DO UPDATE`), tree is rebuilt from all leaf hashes (including updated one), and stored tree is updated
+
+**Storage**:
+
+- **Database**: Tree stored as JSONB in `merkle_trees` table, leaf hashes in `leaf_hashes` table
+- **Filesystem**: Tree stored in `merkle_tree.json`, leaf hashes in `leaf_hashes.json`
+
+**Benefits**:
+
+- Fast proof generation (no file reading)
+- Efficient storage (only hashes, not file contents)
+- Handles re-uploads correctly (tree rebuilt after each upload)
+
+**Trade-off**: Slight upload latency increase due to tree rebuilding, but download performance significantly improved.
 
 ### 8. Domain Separation
 
@@ -288,14 +325,18 @@ server_data/
         {batch_id}/
             {filename}
             metadata.json
+            merkle_tree.json
+            leaf_hashes.json
 ```
 
 **Database:**
 
-- `clients`: client_id, public_key
-- `batches`: client_id, batch_id
-- `files`: client_id, batch_id, filename, content
-- `batch_filenames`: client_id, batch_id, filename (metadata)
+- `clients`: Client public keys
+- `batches`: Upload session groups
+- `files`: Encrypted file content
+- `batch_filenames`: Batch file metadata
+- `leaf_hashes`: File leaf hashes
+- `merkle_trees`: Merkle tree structure
 
 ## Security Considerations
 
@@ -353,14 +394,15 @@ server_data/
 - **Transparent Decryption**: Files automatically decrypted on download
 
 ### 8. Limitations
+
 - **No Access Control**: All authenticated clients can upload
 - **No Rate Limiting**: No protection against DoS
 - **No TLS**: Server does not enforce TLS (must be behind TLS proxy in production)
 
 ## Performance Characteristics
 
-- **Upload**: O(n) - Read files, build tree, sign requests, upload files
-- **Download**: O(n) - Read all files in batch, build tree, generate proof
+- **Upload**: O(n) - Read files, encrypt, build tree, sign requests, upload files, rebuild and store tree
+- **Download**: O(log n) - Load stored tree, generate proof (no file reading needed)
 - **Proof Verification**: O(log n) - Hash operations along proof path
 
 ## Scalability
@@ -372,8 +414,6 @@ server_data/
 
 ### High Priority
 
-- **Precompute and Persist Merkle Tree Nodes**: Store tree structure for large batches to generate proofs quickly
-- **Cache Leaf Hashes**: Store leaf hashes on upload to avoid reading content to recompute
 - **TLS & Hardened Deployment**: Server must be behind TLS in production (document setup)
 - **Rate Limiting**:
   - Per-client rate limiting (requests per minute/hour)

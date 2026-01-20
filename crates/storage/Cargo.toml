@@ -9,6 +9,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 hex = { workspace = true }
 async-trait = "0.1"
+merkle-tree = { path = "../merkle-tree" }
 
 # Filesystem storage dependencies
 tokio = { workspace = true, features = ["fs", "io-util"] }

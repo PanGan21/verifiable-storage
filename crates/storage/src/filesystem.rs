@@ -63,6 +63,16 @@ impl FilesystemStorage {
     fn public_key_path(&self, client_id: &str) -> PathBuf {
         self.client_dir(client_id).join("public_key.hex")
     }
+
+    /// Get Merkle tree file path
+    fn merkle_tree_path(&self, client_id: &str, batch_id: &str) -> PathBuf {
+        self.batch_dir(client_id, batch_id).join("merkle_tree.json")
+    }
+
+    /// Get leaf hashes file path
+    fn leaf_hashes_path(&self, client_id: &str, batch_id: &str) -> PathBuf {
+        self.batch_dir(client_id, batch_id).join("leaf_hashes.json")
+    }
 }
 
 #[async_trait]
@@ -127,25 +137,6 @@ impl Storage for FilesystemStorage {
         Ok(file_path.exists())
     }
 
-    async fn read_batch_files(
-        &self,
-        client_id: &str,
-        batch_id: &str,
-        filenames: &[String],
-    ) -> Result<Vec<Vec<u8>>> {
-        let mut file_data = Vec::new();
-
-        for filename in filenames {
-            let file_path = self.file_path(client_id, batch_id, filename);
-            let content = tokio::fs::read(&file_path)
-                .await
-                .with_context(|| format!("Failed to read file {}: {:?}", filename, file_path))?;
-            file_data.push(content);
-        }
-
-        Ok(file_data)
-    }
-
     async fn store_public_key(&self, client_id: &str, public_key: &[u8]) -> Result<()> {
         let client_dir = self.client_dir(client_id);
         let public_key_file = self.public_key_path(client_id);
@@ -172,5 +163,114 @@ impl Storage for FilesystemStorage {
         let public_key_bytes =
             hex::decode(public_key_hex.trim()).context("Failed to decode public key")?;
         Ok(Some(public_key_bytes))
+    }
+
+    async fn store_merkle_tree(
+        &self,
+        client_id: &str,
+        batch_id: &str,
+        tree: &merkle_tree::MerkleTree,
+    ) -> Result<()> {
+        let tree_file = self.merkle_tree_path(client_id, batch_id);
+        let tree_json =
+            serde_json::to_string_pretty(tree).context("Failed to serialize Merkle tree")?;
+
+        // Write tree file atomically
+        Self::write_file_atomic(&tree_file, tree_json.as_bytes())
+            .await
+            .context("Failed to write Merkle tree file")?;
+
+        Ok(())
+    }
+
+    async fn load_merkle_tree(
+        &self,
+        client_id: &str,
+        batch_id: &str,
+    ) -> Result<Option<merkle_tree::MerkleTree>> {
+        let tree_file = self.merkle_tree_path(client_id, batch_id);
+
+        if !tree_file.exists() {
+            return Ok(None);
+        }
+
+        let tree_json = tokio::fs::read_to_string(&tree_file)
+            .await
+            .context("Failed to read Merkle tree file")?;
+        let tree: merkle_tree::MerkleTree =
+            serde_json::from_str(&tree_json).context("Failed to deserialize Merkle tree")?;
+
+        Ok(Some(tree))
+    }
+
+    async fn store_leaf_hash(
+        &self,
+        client_id: &str,
+        batch_id: &str,
+        filename: &str,
+        leaf_hash: &[u8; 32],
+    ) -> Result<()> {
+        let leaf_hashes_file = self.leaf_hashes_path(client_id, batch_id);
+
+        // Load existing leaf hashes or create new map
+        let mut leaf_hashes: std::collections::HashMap<String, String> =
+            if leaf_hashes_file.exists() {
+                let content = tokio::fs::read_to_string(&leaf_hashes_file)
+                    .await
+                    .context("Failed to read leaf hashes file")?;
+                serde_json::from_str(&content).context("Failed to parse leaf hashes file")?
+            } else {
+                std::collections::HashMap::new()
+            };
+
+        // Store leaf hash (hex-encoded)
+        leaf_hashes.insert(filename.to_string(), hex::encode(leaf_hash));
+
+        // Save atomically
+        let leaf_hashes_json = serde_json::to_string_pretty(&leaf_hashes)
+            .context("Failed to serialize leaf hashes")?;
+        Self::write_file_atomic(&leaf_hashes_file, leaf_hashes_json.as_bytes())
+            .await
+            .context("Failed to write leaf hashes file")?;
+
+        Ok(())
+    }
+
+    async fn load_batch_leaf_hashes(
+        &self,
+        client_id: &str,
+        batch_id: &str,
+    ) -> Result<Vec<[u8; 32]>> {
+        let leaf_hashes_file = self.leaf_hashes_path(client_id, batch_id);
+
+        if !leaf_hashes_file.exists() {
+            return Ok(Vec::new());
+        }
+
+        let content = tokio::fs::read_to_string(&leaf_hashes_file)
+            .await
+            .context("Failed to read leaf hashes file")?;
+        let leaf_hashes: std::collections::HashMap<String, String> =
+            serde_json::from_str(&content).context("Failed to parse leaf hashes file")?;
+
+        // Sort by filename and convert to [u8; 32]
+        let mut sorted_entries: Vec<_> = leaf_hashes.into_iter().collect();
+        sorted_entries.sort_by_key(|(filename, _)| filename.clone());
+
+        let mut hashes = Vec::new();
+        for (_, hash_hex) in sorted_entries {
+            let hash_bytes = hex::decode(hash_hex.trim()).context("Failed to decode leaf hash")?;
+            if hash_bytes.len() != 32 {
+                anyhow::bail!(
+                    "Invalid leaf hash length: expected 32 bytes, got {}",
+                    hash_bytes.len()
+                );
+            }
+            let mut hash = [0u8; 32];
+            hash.copy_from_slice(&hash_bytes);
+            hashes.push(hash);
+        }
+
+        Ok(hashes)
     }
 }

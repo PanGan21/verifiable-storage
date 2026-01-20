@@ -6,6 +6,7 @@ use actix_multipart::form::MultipartForm;
 use actix_web::{post, web, HttpResponse, Result as ActixResult};
 use common::file_utils;
 use crypto::hash_leaf;
+use merkle_tree::MerkleTree;
 use tracing::info;
 
 /// Handle file upload (multipart/form-data)
@@ -99,11 +100,37 @@ pub async fn upload(
         .await
         .map_err(|e| handle_server_error("Failed to store file and metadata", e))?;
 
+    // Store leaf hash for this file
+    state
+        .storage
+        .store_leaf_hash(&client_id, &batch_id, &filename, &computed_hash)
+        .await
+        .map_err(|e| handle_server_error("Failed to store leaf hash", e))?;
+
+    // Rebuild Merkle tree from all leaf hashes in the batch
+    let leaf_hashes = state
+        .storage
+        .load_batch_leaf_hashes(&client_id, &batch_id)
+        .await
+        .map_err(|e| handle_server_error("Failed to load batch leaf hashes", e))?;
+
+    // Build Merkle tree from leaf hashes
+    let tree = MerkleTree::from_leaf_hashes(&leaf_hashes)
+        .map_err(|e| handle_server_error("Failed to build Merkle tree from leaf hashes", e))?;
+
+    // Store the rebuilt tree
+    state
+        .storage
+        .store_merkle_tree(&client_id, &batch_id, &tree)
+        .await
+        .map_err(|e| handle_server_error("Failed to store Merkle tree", e))?;
+
     info!(
         filename = ?filename,
         client_id = ?client_id,
         batch_id = ?batch_id,
-        "POST /upload - File uploaded"
+        num_leaves = leaf_hashes.len(),
+        "POST /upload - File uploaded and Merkle tree rebuilt"
     );
 
     Ok(HttpResponse::Ok().finish())
