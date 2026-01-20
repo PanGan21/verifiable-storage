@@ -13,6 +13,7 @@ merkle-tree = { path = "../merkle-tree" }
 
 # Filesystem storage dependencies
 tokio = { workspace = true, features = ["fs", "io-util"] }
+fs2 = "0.4"
 
 # Database storage (PostgreSQL only)
 [dependencies.sqlx]

@@ -186,22 +186,24 @@ impl Queries {
         Ok(())
     }
 
-    /// Load all leaf hashes for a batch (sorted by filename)
-    pub async fn load_batch_leaf_hashes(
-        pool: &PgPool,
+    /// Load all leaf hashes for a batch with row-level locking (SELECT FOR UPDATE)
+    /// This prevents concurrent modifications during tree rebuilding
+    pub async fn load_batch_leaf_hashes_locked(
+        pool: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
         client_id: &str,
         batch_id: &str,
     ) -> Result<Vec<[u8; 32]>> {
         let rows = sqlx::query_as::<_, (Vec<u8>,)>(
             "SELECT leaf_hash FROM leaf_hashes 
              WHERE client_id = $1 AND batch_id = $2 
-             ORDER BY filename",
+             ORDER BY filename
+             FOR UPDATE",
         )
         .bind(client_id)
         .bind(batch_id)
         .fetch_all(pool)
         .await
-        .context("Failed to load batch leaf hashes")?;
+        .context("Failed to load batch leaf hashes with lock")?;
 
         let mut hashes = Vec::new();
         for (hash_bytes,) in rows {

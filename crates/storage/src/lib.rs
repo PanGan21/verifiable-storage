@@ -11,17 +11,6 @@ pub use database::DatabaseRetryConfig;
 /// Storage backend trait for file and metadata operations
 #[async_trait]
 pub trait Storage: Send + Sync {
-    /// Store a file and add it to metadata atomically
-    /// For database: uses a transaction
-    /// For filesystem: uses atomic file operations (temp file + fsync + rename)
-    async fn store_file_with_metadata(
-        &self,
-        client_id: &str,
-        batch_id: &str,
-        filename: &str,
-        content: &[u8],
-    ) -> Result<()>;
-
     /// Read a file from a batch
     async fn read_file(&self, client_id: &str, batch_id: &str, filename: &str) -> Result<Vec<u8>>;
 
@@ -37,14 +26,6 @@ pub trait Storage: Send + Sync {
     /// Load a client's public key
     async fn load_public_key(&self, client_id: &str) -> Result<Option<Vec<u8>>>;
 
-    /// Store Merkle tree structure for a batch
-    async fn store_merkle_tree(
-        &self,
-        client_id: &str,
-        batch_id: &str,
-        tree: &merkle_tree::MerkleTree,
-    ) -> Result<()>;
-
     /// Load Merkle tree structure for a batch
     async fn load_merkle_tree(
         &self,
@@ -52,19 +33,17 @@ pub trait Storage: Send + Sync {
         batch_id: &str,
     ) -> Result<Option<merkle_tree::MerkleTree>>;
 
-    /// Store leaf hash for a file
-    async fn store_leaf_hash(
+    /// Atomically store file, leaf hash, and update Merkle tree
+    /// This method ensures that concurrent uploads to the same batch_id are handled correctly
+    /// by using transactions and locking to prevent race conditions.
+    /// For database: uses a transaction with SELECT FOR UPDATE
+    /// For filesystem: uses file locking
+    async fn store_file_and_update_tree(
         &self,
         client_id: &str,
         batch_id: &str,
         filename: &str,
+        content: &[u8],
         leaf_hash: &[u8; 32],
     ) -> Result<()>;
-
-    /// Load all leaf hashes for a batch (sorted by filename)
-    async fn load_batch_leaf_hashes(
-        &self,
-        client_id: &str,
-        batch_id: &str,
-    ) -> Result<Vec<[u8; 32]>>;
 }

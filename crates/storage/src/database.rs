@@ -1,5 +1,6 @@
 mod queries;
 mod schema;
+use merkle_tree::MerkleTree;
 
 use crate::Storage;
 use anyhow::{Context, Result};
@@ -130,30 +131,6 @@ fn calculate_retry_delay(attempt: u32, initial_delay_seconds: u64) -> Duration {
 
 #[async_trait]
 impl Storage for DatabaseStorage {
-    async fn store_file_with_metadata(
-        &self,
-        client_id: &str,
-        batch_id: &str,
-        filename: &str,
-        content: &[u8],
-    ) -> Result<()> {
-        // Use a transaction to ensure both operations succeed or fail together
-        let mut tx = self
-            .pool
-            .begin()
-            .await
-            .context("Failed to begin transaction")?;
-
-        Queries::ensure_batch(&mut *tx, client_id, batch_id).await?;
-        Queries::store_file(&mut *tx, client_id, batch_id, filename, content).await?;
-        Queries::add_filename_to_metadata(&mut *tx, client_id, batch_id, filename).await?;
-
-        tx.commit()
-            .await
-            .context("Failed to commit transaction for atomic file and metadata storage")?;
-        Ok(())
-    }
-
     async fn read_file(&self, client_id: &str, batch_id: &str, filename: &str) -> Result<Vec<u8>> {
         Queries::read_file(&self.pool, client_id, batch_id, filename)
             .await?
@@ -186,15 +163,6 @@ impl Storage for DatabaseStorage {
         Queries::load_public_key(&self.pool, client_id).await
     }
 
-    async fn store_merkle_tree(
-        &self,
-        client_id: &str,
-        batch_id: &str,
-        tree: &merkle_tree::MerkleTree,
-    ) -> Result<()> {
-        Queries::store_merkle_tree(&self.pool, client_id, batch_id, tree).await
-    }
-
     async fn load_merkle_tree(
         &self,
         client_id: &str,
@@ -203,33 +171,45 @@ impl Storage for DatabaseStorage {
         Queries::load_merkle_tree(&self.pool, client_id, batch_id).await
     }
 
-    async fn store_leaf_hash(
+    async fn store_file_and_update_tree(
         &self,
         client_id: &str,
         batch_id: &str,
         filename: &str,
+        content: &[u8],
         leaf_hash: &[u8; 32],
     ) -> Result<()> {
-        // Use a transaction to ensure consistency
+        // Use a single transaction to ensure atomicity
+        // SELECT FOR UPDATE locks the leaf_hashes rows to prevent concurrent modifications
         let mut tx = self
             .pool
             .begin()
             .await
-            .context("Failed to begin transaction")?;
+            .context("Failed to begin transaction for atomic file and tree update")?;
 
+        Queries::ensure_batch(&mut *tx, client_id, batch_id).await?;
+        Queries::store_file(&mut *tx, client_id, batch_id, filename, content).await?;
+        Queries::add_filename_to_metadata(&mut *tx, client_id, batch_id, filename).await?;
         Queries::store_leaf_hash(&mut *tx, client_id, batch_id, filename, leaf_hash).await?;
 
+        // Load all leaf hashes with row-level lock
+        // This prevents other transactions from modifying leaf hashes until committed
+        let leaf_hashes = Queries::load_batch_leaf_hashes_locked(&mut *tx, client_id, batch_id)
+            .await
+            .context("Failed to load batch leaf hashes with lock")?;
+
+        // Build Merkle tree from all leaf hashes
+        let tree = MerkleTree::from_leaf_hashes(&leaf_hashes)
+            .context("Failed to build Merkle tree from leaf hashes")?;
+
+        // Store the rebuilt tree
+        Queries::store_merkle_tree(&mut *tx, client_id, batch_id, &tree).await?;
+
+        // Commit the entire transaction
         tx.commit()
             .await
-            .context("Failed to commit transaction for leaf hash storage")?;
-        Ok(())
-    }
+            .context("Failed to commit transaction for atomic file and tree update")?;
 
-    async fn load_batch_leaf_hashes(
-        &self,
-        client_id: &str,
-        batch_id: &str,
-    ) -> Result<Vec<[u8; 32]>> {
-        Queries::load_batch_leaf_hashes(&self.pool, client_id, batch_id).await
+        Ok(())
     }
 }
