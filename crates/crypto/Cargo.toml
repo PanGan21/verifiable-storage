@@ -10,5 +10,8 @@ sha2.workspace = true
 hex.workspace = true
 anyhow.workspace = true
 rand.workspace = true
+aes-gcm = { workspace = true }
+hkdf = { workspace = true }
+generic-array = { workspace = true }
 
 

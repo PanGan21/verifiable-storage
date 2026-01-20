@@ -32,9 +32,10 @@ The system requirements are:
 1. **Custom Merkle Tree**: Domain-separated implementation (0x00 for leaves, 0x01 for internal nodes)
 2. **Storage Abstraction**: Trait-based design supports filesystem and PostgreSQL backends
 3. **Authentication**: Ed25519 signatures on all requests with auto-registration
-4. **Security**: Filename validation, timestamp validation, log sanitization, atomic operations
-5. **Batch Organization**: Files organized by batch_id for logical grouping
-6. **Multipart File Uploads**: Standard HTTP multipart/form-data format for efficient file transfers
+4. **Client-Side Encryption**: AES-256-GCM encryption before upload, decryption after download
+5. **Security**: Filename validation, timestamp validation, log sanitization, atomic operations
+6. **Batch Organization**: Files organized by batch_id for logical grouping
+7. **Multipart File Uploads**: Standard HTTP multipart/form-data format for efficient file transfers
 
 ## Key Features
 
@@ -188,27 +189,28 @@ Proof for File0: [Hash1, Hash23] (siblings along path to root)
 ### Upload Flow
 
 ```
-1. Client reads files from directory
+1. Client reads plaintext files from directory
 2. Client validates each filename (prevents path traversal)
-3. Client sorts filenames (deterministic order)
-4. Client builds Merkle tree from all files
-5. Client computes root hash
-6. For each file:
-   - Client builds message: filename || batch_id || file_hash || file_content || timestamp
+3. Client encrypts each file using AES-256-GCM (key derived from Ed25519 signing key)
+4. Client sorts filenames (deterministic order)
+5. Client builds Merkle tree from encrypted files
+6. Client computes root hash from encrypted data
+7. For each encrypted file:
+   - Client builds message: filename || batch_id || file_hash || encrypted_content || timestamp
    - Client signs message with Ed25519 private key
-   - Client sends POST /upload with multipart/form-data (file + metadata fields)
+   - Client sends POST /upload with multipart/form-data (encrypted file + metadata fields)
    - Server validates form fields (length, format)
    - Server validates filename (path traversal protection)
    - Server validates timestamp (replay attack prevention)
    - Server verifies signature
-   - Server stores file and metadata atomically
-7. Client saves root hash locally
+   - Server stores encrypted file and metadata atomically
+8. Client saves root hash locally (hash of encrypted Merkle tree)
 ```
 
 ### Download Flow
 
 ```
-1. Client loads root hash from local storage
+1. Client loads root hash from local storage (hash of encrypted Merkle tree)
 2. Client validates filename (prevents path traversal)
 3. Client builds message: filename || batch_id || timestamp
 4. Client signs message with Ed25519 private key
@@ -217,11 +219,14 @@ Proof for File0: [Hash1, Hash23] (siblings along path to root)
 7. Server validates timestamp (replay attack prevention)
 8. Server verifies signature
 9. Server loads batch metadata (filenames)
-10. Server reads all files in batch
-11. Server builds Merkle tree (sorted by filename)
-12. Server generates proof for requested file
-13. Server returns file hash and proof (JSON response with base64-encoded file)
-14. Client verifies proof against stored root hash
+10. Server reads all encrypted files in batch
+11. Server builds Merkle tree from encrypted files (sorted by filename)
+12. Server generates proof for requested encrypted file
+13. Server returns encrypted file hash and proof (JSON response with base64-encoded encrypted file)
+14. Client verifies encrypted file hash matches downloaded encrypted content
+15. Client verifies Merkle proof against stored root hash (proof is for encrypted data)
+16. Client decrypts encrypted file to get plaintext
+17. Client saves both encrypted (.encrypted suffix) and decrypted files (for demo purposes)
 ```
 
 ## Design Decisions
@@ -338,9 +343,16 @@ server_data/
 - **Filesystem**: Fsync ensures data is persisted before returning success
 - Prevents inconsistent state (file without metadata or corrupted files)
 
-### 7. Limitations
+### 7. Encryption at Rest
 
-- **No Encryption**: Files stored in plaintext
+- **Client-Side Encryption**: Files encrypted before upload using AES-256-GCM
+- **Encryption Key**: Derived from Ed25519 signing key using HKDF
+- **Deterministic Nonce**: Nonce derived from filename + batch_id (no nonce storage needed)
+- **Server Never Sees Plaintext**: Server only stores encrypted bytes
+- **Merkle Tree from Encrypted Data**: Root hash computed from encrypted files
+- **Transparent Decryption**: Files automatically decrypted on download
+
+### 8. Limitations
 - **No Access Control**: All authenticated clients can upload
 - **No Rate Limiting**: No protection against DoS
 - **No TLS**: Server does not enforce TLS (must be behind TLS proxy in production)

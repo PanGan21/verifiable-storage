@@ -3,7 +3,7 @@ use anyhow::{Context, Result};
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use common::{file_utils, DownloadResponse, ProofNodeJson};
-use crypto::{hash_leaf, sign_message};
+use crypto::{decrypt_file, hash_leaf, sign_message};
 use ed25519_dalek::SigningKey;
 use merkle_tree::MerkleProof;
 use reqwest::blocking::Client;
@@ -88,30 +88,54 @@ impl FileDownloader {
         // Print received data
         self.print_received_proof(&result);
 
-        // Verify Merkle proof
+        // Verify Merkle proof (proof is for encrypted data)
         self.verify_merkle_proof(&result, root_hash)?;
 
-        // Decode and save file content
-        let file_content = STANDARD
+        // Decode encrypted file content from server
+        let encrypted_content = STANDARD
             .decode(&result.file_content)
-            .context("Failed to decode file content from server")?;
+            .context("Failed to decode encrypted file content from server")?;
 
-        // Verify file hash matches downloaded content
-        let downloaded_hash_hex = hex::encode(hash_leaf(&file_content));
+        // Verify encrypted file hash matches downloaded encrypted content
+        // (Merkle tree is built from encrypted data, so we verify hash of encrypted data)
+        let downloaded_hash_hex = hex::encode(hash_leaf(&encrypted_content));
         anyhow::ensure!(
             downloaded_hash_hex == result.file_hash,
-            "File hash mismatch: expected {}, got {}",
+            "Encrypted file hash mismatch: expected {}, got {}",
             result.file_hash,
             downloaded_hash_hex
         );
 
-        // Save file to output directory
-        self.save_downloaded_file(&result.filename, &file_content, output_dir)?;
+        // Save encrypted file first
+        let output_path = if let Some(dir) = output_dir {
+            dir.clone()
+        } else {
+            self.data_dir.join(&self.batch_id).join(DOWNLOADED_DIR)
+        };
+        self.save_encrypted_file(&result.filename, &encrypted_content, &output_path)?;
+
+        // Decrypt the encrypted content to get plaintext
+        let plaintext = decrypt_file(
+            &self.signing_key,
+            &result.filename,
+            &self.batch_id,
+            &encrypted_content,
+        )
+        .context("Failed to decrypt file content")?;
+
+        // Save decrypted plaintext file to output directory
+        self.save_downloaded_file(&result.filename, &plaintext, output_dir)?;
 
         println!("\n✓ File verification successful!");
         println!("  File: {}", filename);
         println!("  File hash: {}", result.file_hash);
         println!("  Verified against root: {}", root_hash);
+        println!(
+            "  Encrypted file saved temporarily: {}",
+            output_path
+                .join(format!("{}.encrypted", filename))
+                .display()
+        );
 
         Ok(())
     }
@@ -241,7 +265,26 @@ impl FileDownloader {
         message
     }
 
-    /// Save downloaded file to disk
+    /// Save encrypted file to disk (for demo purposes)
+    fn save_encrypted_file(
+        &self,
+        filename: &str,
+        encrypted_content: &[u8],
+        output_dir: &PathBuf,
+    ) -> Result<()> {
+        // Create output directory if it doesn't exist
+        fs::create_dir_all(output_dir).context("Failed to create output directory")?;
+
+        // Save encrypted file with .encrypted suffix
+        let encrypted_filename = format!("{}.encrypted", filename);
+        let encrypted_path = output_dir.join(&encrypted_filename);
+        fs::write(&encrypted_path, encrypted_content).context("Failed to write encrypted file")?;
+
+        println!("  Encrypted file saved to: {:?}", encrypted_path);
+        Ok(())
+    }
+
+    /// Save downloaded file to disk (decrypted plaintext)
     fn save_downloaded_file(
         &self,
         filename: &str,
@@ -259,11 +302,11 @@ impl FileDownloader {
         // Create output directory if it doesn't exist
         fs::create_dir_all(&output_path).context("Failed to create output directory")?;
 
-        // Save file
+        // Save decrypted file
         let file_path = output_path.join(filename);
         fs::write(&file_path, content).context("Failed to write downloaded file")?;
 
-        println!("  File saved to: {:?}", file_path);
+        println!("  Decrypted file saved to: {:?}", file_path);
         Ok(())
     }
 }

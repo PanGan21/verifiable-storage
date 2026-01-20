@@ -1,7 +1,7 @@
 use crate::constants::{FILENAMES_FILE, ROOT_HASH_FILE, UPLOAD_ENDPOINT};
 use anyhow::{Context, Result};
 use common::file_utils;
-use crypto::{hash_leaf, sign_message};
+use crypto::{encrypt_file, hash_leaf, sign_message};
 use ed25519_dalek::SigningKey;
 use log::info;
 use merkle_tree::MerkleTree;
@@ -63,23 +63,35 @@ impl FileUploader {
 
         info!("Found {} files to upload", file_list.len());
 
-        // Build Merkle tree and compute root hash
-        let file_data: Vec<Vec<u8>> = file_list
+        // Encrypt all files first
+        let encrypted_file_list: Vec<(String, Vec<u8>)> = file_list
             .iter()
-            .map(|(_, content)| content.clone())
+            .map(|(filename, plaintext)| {
+                let encrypted = encrypt_file(&self.signing_key, filename, &self.batch_id, plaintext)
+                    .with_context(|| format!("Failed to encrypt file: {}", filename))?;
+                Ok((filename.clone(), encrypted))
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        info!("Encrypted {} files", encrypted_file_list.len());
+
+        // Build Merkle tree from encrypted files and compute root hash
+        let encrypted_file_data: Vec<Vec<u8>> = encrypted_file_list
+            .iter()
+            .map(|(_, encrypted_content)| encrypted_content.clone())
             .collect();
         let root_hash_hex = hex::encode(
-            MerkleTree::from_data(&file_data)
-                .context("Failed to build Merkle tree")?
+            MerkleTree::from_data(&encrypted_file_data)
+                .context("Failed to build Merkle tree from encrypted files")?
                 .root_hash(),
         );
 
-        info!("Uploading files (computed root hash: {})", root_hash_hex);
+        info!("Uploading files (computed root hash from encrypted data: {})", root_hash_hex);
 
-        // Upload each file
-        self.upload_files_to_server(&file_list)?;
+        // Upload each encrypted file
+        self.upload_files_to_server(&encrypted_file_list)?;
 
-        // Save metadata (root hash and filenames)
+        // Save metadata (root hash and filenames) - use original filenames
         self.save_upload_metadata(&root_hash_hex, &file_list)?;
 
         info!(
@@ -166,17 +178,18 @@ impl FileUploader {
     }
 
     /// Build multipart form for file upload
+    /// content is encrypted data
     fn build_multipart_form(
         &self,
         filename: &str,
-        content: &[u8],
+        content: &[u8], // Encrypted content
         public_key_hex: &str,
     ) -> Result<multipart::Form> {
-        // Compute leaf hash
+        // Compute leaf hash from encrypted content (Merkle tree is built from encrypted data)
         let leaf_hash = hash_leaf(content);
         let leaf_hash_hex = hex::encode(leaf_hash);
 
-        // Create message to sign using raw file bytes
+        // Create message to sign using encrypted file bytes
         let timestamp = common::get_current_timestamp_ms();
         let message = self.build_upload_message(filename, &leaf_hash_hex, content, timestamp);
 
@@ -204,12 +217,12 @@ impl FileUploader {
     }
 
     /// Build message for upload signature
-    /// Signs raw file bytes (not base64)
+    /// Signs encrypted file bytes (not base64)
     fn build_upload_message(
         &self,
         filename: &str,
         file_hash: &str,
-        file_content: &[u8], // Raw bytes, not base64
+        file_content: &[u8], // Encrypted bytes
         timestamp: u64,
     ) -> Vec<u8> {
         let mut message = Vec::new();
