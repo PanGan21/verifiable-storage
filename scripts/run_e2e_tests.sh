@@ -78,11 +78,51 @@ docker compose up -d
 
 # Wait for services to be ready
 echo -e "\n${YELLOW}⏳ Waiting for services to be ready...${NC}"
+
+# First, wait for all server containers to be running
+echo -e "${YELLOW}Waiting for server containers to start...${NC}"
 MAX_WAIT=60
 WAIT_COUNT=0
 while [ $WAIT_COUNT -lt $MAX_WAIT ]; do
-    if docker compose ps | grep -q "verifiable-storage-server.*Up"; then
-        # Check if server is responding
+    SERVER1_UP=$(docker compose ps server1 | grep -q "Up" && echo "yes" || echo "no")
+    SERVER2_UP=$(docker compose ps server2 | grep -q "Up" && echo "yes" || echo "no")
+    SERVER3_UP=$(docker compose ps server3 | grep -q "Up" && echo "yes" || echo "no")
+    
+    if [ "$SERVER1_UP" = "yes" ] && [ "$SERVER2_UP" = "yes" ] && [ "$SERVER3_UP" = "yes" ]; then
+        echo -e "${GREEN}✅ All server containers are running${NC}"
+        break
+    fi
+    WAIT_COUNT=$((WAIT_COUNT + 1))
+    sleep 1
+done
+
+if [ $WAIT_COUNT -eq $MAX_WAIT ]; then
+    echo -e "${RED}❌ Server containers did not start within $MAX_WAIT seconds${NC}"
+    docker compose ps
+    docker compose logs --tail=50
+    docker compose down -v
+    exit 1
+fi
+
+# Wait a bit for servers to fully initialize
+echo -e "${YELLOW}Waiting for servers to initialize...${NC}"
+sleep 5
+
+# Check if nginx container is running, restart if it failed
+echo -e "${YELLOW}Checking nginx load balancer...${NC}"
+if ! docker compose ps nginx | grep -q "Up"; then
+    echo -e "${YELLOW}Nginx container not running, restarting...${NC}"
+    docker compose restart nginx
+    sleep 3
+fi
+
+# Now wait for nginx to be ready and health endpoint to respond
+echo -e "${YELLOW}Waiting for load balancer to be ready...${NC}"
+MAX_WAIT=60
+WAIT_COUNT=0
+while [ $WAIT_COUNT -lt $MAX_WAIT ]; do
+    if docker compose ps nginx | grep -q "Up"; then
+        # Check if nginx (load balancer) is responding
         if curl -s http://localhost:8080/health > /dev/null 2>&1; then
             echo -e "${GREEN}✅ Services are ready!${NC}"
             break
@@ -94,7 +134,12 @@ done
 
 if [ $WAIT_COUNT -eq $MAX_WAIT ]; then
     echo -e "${RED}❌ Services did not become ready within $MAX_WAIT seconds${NC}"
-    docker compose logs
+    echo -e "${YELLOW}Container status:${NC}"
+    docker compose ps
+    echo -e "\n${YELLOW}Nginx logs:${NC}"
+    docker compose logs nginx --tail=20
+    echo -e "\n${YELLOW}Server logs:${NC}"
+    docker compose logs server1 server2 server3 --tail=20
     docker compose down -v
     exit 1
 fi

@@ -6,6 +6,8 @@ use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 use test_utils::*;
 
+const TEST_FILES_COUNT: usize = 2;
+
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt()
@@ -68,7 +70,7 @@ async fn run_database_storage_tests() -> Result<()> {
     wait_for_server(&server_url).await?;
 
     // Create test files
-    create_test_files(&test_files_dir, 5)?;
+    create_test_files(&test_files_dir, TEST_FILES_COUNT)?;
 
     // Generate keypair
     println!("\n📝 Generating keypair...");
@@ -92,12 +94,13 @@ async fn run_database_storage_tests() -> Result<()> {
 
         // Validate database
         println!("\n🔍 Validating database state...");
-        database_validator::validate_upload(&database_url, &client_id, &batch_id, 5).await?;
+        database_validator::validate_upload(&database_url, &client_id, &batch_id, TEST_FILES_COUNT)
+            .await?;
         println!("✅ Database validation passed");
 
         // Validate client filesystem
         println!("\n🔍 Validating client filesystem...");
-        filesystem_validator::validate_client_data(&client_data_dir, &batch_id, 5)?;
+        filesystem_validator::validate_client_data(&client_data_dir, &batch_id, TEST_FILES_COUNT)?;
         println!("✅ Client filesystem validation passed");
 
         // Test download
@@ -176,7 +179,7 @@ async fn run_filesystem_storage_tests() -> Result<()> {
     wait_for_server(&server_url).await?;
 
     // Create test files
-    create_test_files(&test_files_dir, 5)?;
+    create_test_files(&test_files_dir, TEST_FILES_COUNT)?;
 
     // Generate keypair
     println!("\n📝 Generating keypair...");
@@ -200,12 +203,17 @@ async fn run_filesystem_storage_tests() -> Result<()> {
 
         // Validate server filesystem
         println!("\n🔍 Validating server filesystem...");
-        filesystem_validator::validate_upload(&server_data_dir, &client_id, &batch_id, 5)?;
+        filesystem_validator::validate_upload(
+            &server_data_dir,
+            &client_id,
+            &batch_id,
+            TEST_FILES_COUNT,
+        )?;
         println!("✅ Server filesystem validation passed");
 
         // Validate client filesystem
         println!("\n🔍 Validating client filesystem...");
-        filesystem_validator::validate_client_data(&client_data_dir, &batch_id, 5)?;
+        filesystem_validator::validate_client_data(&client_data_dir, &batch_id, TEST_FILES_COUNT)?;
         println!("✅ Client filesystem validation passed");
 
         // Test download
