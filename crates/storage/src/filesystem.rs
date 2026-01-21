@@ -180,6 +180,7 @@ impl Storage for FilesystemStorage {
                 // Create lock file if it doesn't exist
                 let file = std::fs::OpenOptions::new()
                     .create(true)
+                    .truncate(false)
                     .write(true)
                     .open(&lock_file)
                     .context("Failed to create lock file")?;
