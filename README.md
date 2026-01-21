@@ -27,7 +27,7 @@ cargo build --release
 docker compose up --build
 ```
 
-The server will be available at `http://localhost:8080` with PostgreSQL database storage.
+The server will be available at `http://localhost:8080` through the nginx load balancer, which distributes requests across multiple server instances using round robin. The load balancer also provides rate limiting protection.
 
 For other deployment options (filesystem storage, local development), see the [Architecture Documentation](docs/architecture.md).
 
