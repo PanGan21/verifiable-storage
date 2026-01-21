@@ -33,7 +33,7 @@ pub trait Storage: Send + Sync {
         batch_id: &str,
     ) -> Result<Option<merkle_tree::MerkleTree>>;
 
-    /// Atomically store file, leaf hash, and update Merkle tree
+    /// Atomically store file and update Merkle tree
     /// This method ensures that concurrent uploads to the same batch_id are handled correctly
     /// by using transactions and locking to prevent race conditions.
     /// For database: uses a transaction with SELECT FOR UPDATE
@@ -44,6 +44,5 @@ pub trait Storage: Send + Sync {
         batch_id: &str,
         filename: &str,
         content: &[u8],
-        leaf_hash: &[u8; 32],
     ) -> Result<()>;
 }

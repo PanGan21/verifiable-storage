@@ -11,8 +11,6 @@ impl Schema {
         Self::create_clients_table(pool).await?;
         Self::create_batches_table(pool).await?;
         Self::create_files_table(pool).await?;
-        Self::create_batch_filenames_table(pool).await?;
-        Self::create_leaf_hashes_table(pool).await?;
         Self::create_merkle_trees_table(pool).await?;
         Self::create_indexes(pool).await?;
         info!("PostgreSQL database storage initialized");
@@ -76,47 +74,6 @@ impl Schema {
         Ok(())
     }
 
-    /// Create batch_filenames table
-    async fn create_batch_filenames_table(pool: &PgPool) -> Result<()> {
-        sqlx::query(
-            r#"
-            CREATE TABLE IF NOT EXISTS batch_filenames (
-                client_id VARCHAR(255) NOT NULL,
-                batch_id VARCHAR(255) NOT NULL,
-                filename VARCHAR(255) NOT NULL,
-                PRIMARY KEY (client_id, batch_id, filename),
-                FOREIGN KEY (client_id, batch_id, filename) 
-                    REFERENCES files(client_id, batch_id, filename) ON DELETE CASCADE
-            )
-            "#,
-        )
-        .execute(pool)
-        .await
-        .context("Failed to create batch_filenames table")?;
-        Ok(())
-    }
-
-    /// Create leaf_hashes table for storing file leaf hashes
-    async fn create_leaf_hashes_table(pool: &PgPool) -> Result<()> {
-        sqlx::query(
-            r#"
-            CREATE TABLE IF NOT EXISTS leaf_hashes (
-                client_id VARCHAR(255) NOT NULL,
-                batch_id VARCHAR(255) NOT NULL,
-                filename VARCHAR(255) NOT NULL,
-                leaf_hash BYTEA NOT NULL,
-                PRIMARY KEY (client_id, batch_id, filename),
-                FOREIGN KEY (client_id, batch_id, filename) 
-                    REFERENCES files(client_id, batch_id, filename) ON DELETE CASCADE
-            )
-            "#,
-        )
-        .execute(pool)
-        .await
-        .context("Failed to create leaf_hashes table")?;
-        Ok(())
-    }
-
     /// Create merkle_trees table for storing Merkle tree structures
     async fn create_merkle_trees_table(pool: &PgPool) -> Result<()> {
         sqlx::query(
@@ -148,13 +105,6 @@ impl Schema {
             .execute(pool)
             .await
             .context("Failed to create files index")?;
-
-        sqlx::query(
-            "CREATE INDEX IF NOT EXISTS idx_leaf_hashes_batch ON leaf_hashes(client_id, batch_id)",
-        )
-        .execute(pool)
-        .await
-        .context("Failed to create leaf_hashes index")?;
         Ok(())
     }
 }

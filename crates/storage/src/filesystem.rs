@@ -1,6 +1,6 @@
 mod metadata;
+use crypto::hash_leaf;
 use merkle_tree::MerkleTree;
-use std::collections::HashMap;
 
 use crate::Storage;
 use anyhow::{Context, Result};
@@ -73,12 +73,7 @@ impl FilesystemStorage {
         self.batch_dir(client_id, batch_id).join("merkle_tree.json")
     }
 
-    /// Get leaf hashes file path
-    fn leaf_hashes_path(&self, client_id: &str, batch_id: &str) -> PathBuf {
-        self.batch_dir(client_id, batch_id).join("leaf_hashes.json")
-    }
-
-    /// Get lock file path for a batch (used for file locking)
+    /// Get lock file path for batch-level locking
     fn lock_file_path(&self, client_id: &str, batch_id: &str) -> PathBuf {
         self.batch_dir(client_id, batch_id).join(".lock")
     }
@@ -162,7 +157,6 @@ impl Storage for FilesystemStorage {
         batch_id: &str,
         filename: &str,
         content: &[u8],
-        leaf_hash: &[u8; 32],
     ) -> Result<()> {
         let batch_dir = self.batch_dir(client_id, batch_id);
         let lock_file = self.lock_file_path(client_id, batch_id);
@@ -217,44 +211,22 @@ impl Storage for FilesystemStorage {
             .await
             .context("Failed to write metadata atomically")?;
 
-        // Store leaf hash
-        let leaf_hashes_file = self.leaf_hashes_path(client_id, batch_id);
-        let mut leaf_hashes: HashMap<String, String> = if leaf_hashes_file.exists() {
-            let content = tokio::fs::read_to_string(&leaf_hashes_file)
+        // Load all filenames (sorted) including the newly uploaded file
+        let filenames = Metadata::load_filenames(&metadata_file).await?;
+
+        // Compute leaf hashes from all files
+        let mut leaf_hashes = Vec::new();
+        for filename in &filenames {
+            let file_path = self.file_path(client_id, batch_id, filename);
+            let file_content = tokio::fs::read(&file_path)
                 .await
-                .context("Failed to read leaf hashes file")?;
-            serde_json::from_str(&content).context("Failed to parse leaf hashes file")?
-        } else {
-            HashMap::new()
-        };
-
-        leaf_hashes.insert(filename.to_string(), hex::encode(leaf_hash));
-        let leaf_hashes_json = serde_json::to_string_pretty(&leaf_hashes)
-            .context("Failed to serialize leaf hashes")?;
-        Self::write_file_atomic(&leaf_hashes_file, leaf_hashes_json.as_bytes())
-            .await
-            .context("Failed to write leaf hashes file")?;
-
-        // Load all leaf hashes (sorted by filename)
-        let mut sorted_entries: Vec<_> = leaf_hashes.into_iter().collect();
-        sorted_entries.sort_by_key(|(filename, _)| filename.clone());
-
-        let mut all_leaf_hashes = Vec::new();
-        for (_, hash_hex) in sorted_entries {
-            let hash_bytes = hex::decode(hash_hex.trim()).context("Failed to decode leaf hash")?;
-            if hash_bytes.len() != 32 {
-                anyhow::bail!(
-                    "Invalid leaf hash length: expected 32 bytes, got {}",
-                    hash_bytes.len()
-                );
-            }
-            let mut hash = [0u8; 32];
-            hash.copy_from_slice(&hash_bytes);
-            all_leaf_hashes.push(hash);
+                .with_context(|| format!("Failed to read file: {:?}", file_path))?;
+            let leaf_hash = hash_leaf(&file_content);
+            leaf_hashes.push(leaf_hash);
         }
 
         // Build Merkle tree from all leaf hashes
-        let tree = MerkleTree::from_leaf_hashes(&all_leaf_hashes)
+        let tree = MerkleTree::from_leaf_hashes(&leaf_hashes)
             .context("Failed to build Merkle tree from leaf hashes")?;
 
         // Store the rebuilt tree

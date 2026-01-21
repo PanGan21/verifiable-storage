@@ -177,10 +177,9 @@ impl Storage for DatabaseStorage {
         batch_id: &str,
         filename: &str,
         content: &[u8],
-        leaf_hash: &[u8; 32],
     ) -> Result<()> {
         // Use a single transaction to ensure atomicity
-        // SELECT FOR UPDATE locks the leaf_hashes rows to prevent concurrent modifications
+        // SELECT FOR UPDATE locks the merkle_trees row to prevent concurrent modifications
         let mut tx = self
             .pool
             .begin()
@@ -189,20 +188,41 @@ impl Storage for DatabaseStorage {
 
         Queries::ensure_batch(&mut *tx, client_id, batch_id).await?;
         Queries::store_file(&mut *tx, client_id, batch_id, filename, content).await?;
-        Queries::add_filename_to_metadata(&mut *tx, client_id, batch_id, filename).await?;
-        Queries::store_leaf_hash(&mut *tx, client_id, batch_id, filename, leaf_hash).await?;
 
-        // Load all leaf hashes with row-level lock
-        // This prevents other transactions from modifying leaf hashes until committed
-        let leaf_hashes = Queries::load_batch_leaf_hashes_locked(&mut *tx, client_id, batch_id)
+        // Lock the merkle_trees row to prevent concurrent modifications
+        let _ = sqlx::query(
+            "SELECT 1 FROM merkle_trees 
+             WHERE client_id = $1 AND batch_id = $2 
+             FOR UPDATE",
+        )
+        .bind(client_id)
+        .bind(batch_id)
+        .fetch_optional(&mut *tx)
+        .await
+        .context("Failed to lock Merkle tree row")?;
+
+        // Commit transaction before computing hashes (read-only operation)
+        tx.commit()
             .await
-            .context("Failed to load batch leaf hashes with lock")?;
+            .context("Failed to commit transaction for file storage")?;
+
+        // Compute leaf hashes from all files in the batch
+        // This ensures correctness and handles tree updates correctly
+        let leaf_hashes = Queries::compute_leaf_hashes_from_files(&self.pool, client_id, batch_id)
+            .await
+            .context("Failed to compute leaf hashes from files")?;
 
         // Build Merkle tree from all leaf hashes
         let tree = MerkleTree::from_leaf_hashes(&leaf_hashes)
             .context("Failed to build Merkle tree from leaf hashes")?;
 
-        // Store the rebuilt tree
+        // Store the rebuilt tree in a new transaction
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .context("Failed to begin transaction for tree storage")?;
+
         Queries::store_merkle_tree(&mut *tx, client_id, batch_id, &tree).await?;
 
         // Commit the entire transaction

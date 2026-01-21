@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use crypto::hash_leaf;
 use merkle_tree::MerkleTree;
 use sqlx::PgPool;
 
@@ -98,34 +99,14 @@ impl Queries {
         Ok(exists)
     }
 
-    /// Add filename to batch metadata
-    pub async fn add_filename_to_metadata(
-        pool: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
-        client_id: &str,
-        batch_id: &str,
-        filename: &str,
-    ) -> Result<()> {
-        sqlx::query(
-            "INSERT INTO batch_filenames (client_id, batch_id, filename) 
-             VALUES ($1, $2, $3) ON CONFLICT (client_id, batch_id, filename) DO NOTHING",
-        )
-        .bind(client_id)
-        .bind(batch_id)
-        .bind(filename)
-        .execute(pool)
-        .await
-        .context("Failed to add filename to metadata")?;
-        Ok(())
-    }
-
-    /// Load batch filenames
+    /// Load batch filenames from files table
     pub async fn load_batch_filenames(
         pool: &PgPool,
         client_id: &str,
         batch_id: &str,
     ) -> Result<Vec<String>> {
         let rows = sqlx::query_as::<_, (String,)>(
-            "SELECT filename FROM batch_filenames 
+            "SELECT filename FROM files 
              WHERE client_id = $1 AND batch_id = $2 ORDER BY filename",
         )
         .bind(client_id)
@@ -163,56 +144,29 @@ impl Queries {
         Ok(row.map(|(key,)| key))
     }
 
-    /// Store leaf hash for a file
-    pub async fn store_leaf_hash(
-        pool: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
-        client_id: &str,
-        batch_id: &str,
-        filename: &str,
-        leaf_hash: &[u8; 32],
-    ) -> Result<()> {
-        sqlx::query(
-            "INSERT INTO leaf_hashes (client_id, batch_id, filename, leaf_hash) 
-             VALUES ($1, $2, $3, $4)
-             ON CONFLICT (client_id, batch_id, filename) DO UPDATE SET leaf_hash = EXCLUDED.leaf_hash",
-        )
-        .bind(client_id)
-        .bind(batch_id)
-        .bind(filename)
-        .bind(leaf_hash.as_slice())
-        .execute(pool)
-        .await
-        .context("Failed to store leaf hash")?;
-        Ok(())
-    }
-
-    /// Load all leaf hashes for a batch with row-level locking (SELECT FOR UPDATE)
-    /// This prevents concurrent modifications during tree rebuilding
-    pub async fn load_batch_leaf_hashes_locked(
-        pool: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    /// Compute leaf hashes from file contents
+    /// Reads all files in the batch and computes their leaf hashes
+    pub async fn compute_leaf_hashes_from_files(
+        pool: &PgPool,
         client_id: &str,
         batch_id: &str,
     ) -> Result<Vec<[u8; 32]>> {
-        let rows = sqlx::query_as::<_, (Vec<u8>,)>(
-            "SELECT leaf_hash FROM leaf_hashes 
-             WHERE client_id = $1 AND batch_id = $2 
-             ORDER BY filename
-             FOR UPDATE",
-        )
-        .bind(client_id)
-        .bind(batch_id)
-        .fetch_all(pool)
-        .await
-        .context("Failed to load batch leaf hashes with lock")?;
+        // Load all filenames sorted
+        let filenames = Self::load_batch_filenames(pool, client_id, batch_id).await?;
 
-        let mut hashes = Vec::new();
-        for (hash_bytes,) in rows {
-            let mut hash = [0u8; 32];
-            hash.copy_from_slice(&hash_bytes);
-            hashes.push(hash);
+        // Compute leaf hash for each file
+        let mut leaf_hashes = Vec::new();
+        for filename in filenames {
+            let content = Self::read_file(pool, client_id, batch_id, &filename)
+                .await?
+                .ok_or_else(|| anyhow::anyhow!("File {} not found", filename))?;
+
+            // Use crypto::hash_leaf to compute hash (same as used during upload)
+            let leaf_hash = hash_leaf(&content);
+            leaf_hashes.push(leaf_hash);
         }
 
-        Ok(hashes)
+        Ok(leaf_hashes)
     }
 
     /// Store Merkle tree structure

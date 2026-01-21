@@ -92,18 +92,12 @@ pub async fn upload(
         client_id
     );
 
-    // Atomically store file, leaf hash, and update Merkle tree
+    // Atomically store file and update Merkle tree
     // This ensures that concurrent uploads to the same batch_id are handled correctly
     // by using transactions and locking to prevent race conditions
     state
         .storage
-        .store_file_and_update_tree(
-            &client_id,
-            &batch_id,
-            &filename,
-            &file_content,
-            &computed_hash,
-        )
+        .store_file_and_update_tree(&client_id, &batch_id, &filename, &file_content)
         .await
         .map_err(|e| handle_server_error("Failed to store file and update Merkle tree", e))?;
 

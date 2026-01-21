@@ -297,8 +297,8 @@ Abstract storage behind `Storage` trait. Enables switching between filesystem (d
 
 **Storage**:
 
-- **Database**: Tree stored as JSONB in `merkle_trees` table, leaf hashes in `leaf_hashes` table
-- **Filesystem**: Tree stored in `merkle_tree.json`, leaf hashes in `leaf_hashes.json`
+- **Database**: Tree stored as JSONB in `merkle_trees` table (leaves extracted from tree when rebuilding)
+- **Filesystem**: Tree stored in `merkle_tree.json` (leaves extracted from tree when rebuilding)
 
 **Benefits**:
 
@@ -326,7 +326,6 @@ server_data/
             {filename}
             metadata.json
             merkle_tree.json
-            leaf_hashes.json
 ```
 
 **Database:**
@@ -334,9 +333,7 @@ server_data/
 - `clients`: Client public keys
 - `batches`: Upload session groups
 - `files`: Encrypted file content
-- `batch_filenames`: Batch file metadata
-- `leaf_hashes`: File leaf hashes
-- `merkle_trees`: Merkle tree structure
+- `merkle_trees`: Merkle tree structure (contains all leaf hashes in tree structure)
 
 ## Security Considerations
 
