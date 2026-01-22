@@ -1,10 +1,6 @@
 use crate::state::AppState;
 use actix_web::web;
-use base64::engine::general_purpose::STANDARD;
-use base64::Engine;
 use common::ProofNodeJson;
-use crypto::hash_leaf;
-use merkle_tree::MerkleTree;
 use tracing::error;
 
 use crate::handlers::error::handle_server_error;
@@ -21,16 +17,39 @@ pub async fn generate_proof(
     let mut sorted_filenames = filenames.to_vec();
     sorted_filenames.sort();
 
-    // Read all files in batch
-    let file_data = state
+    // Load stored Merkle tree from database/filesystem
+    let tree = state
         .storage
-        .read_batch_files(client_id, batch_id, &sorted_filenames)
+        .load_merkle_tree(client_id, batch_id)
         .await
-        .map_err(|e| handle_server_error("Failed to read batch files", e))?;
+        .map_err(|e| handle_server_error("Failed to load Merkle tree", e))?
+        .ok_or_else(|| {
+            error!("Merkle tree not found in storage for batch {}", batch_id);
+            handle_server_error(
+                "Merkle tree not found",
+                anyhow::anyhow!(
+                    "Merkle tree not found for batch {} - batch may not have been uploaded with tree storage enabled",
+                    batch_id
+                ),
+            )
+        })?;
 
-    // Build Merkle tree
-    let tree = MerkleTree::from_data(&file_data)
-        .map_err(|e| handle_server_error("Failed to build Merkle tree", e))?;
+    // Verify stored tree has correct number of leaves (data integrity check)
+    if tree.num_leaves() != sorted_filenames.len() {
+        error!(
+            "Stored tree has {} leaves but batch has {} files - tree is out of sync",
+            tree.num_leaves(),
+            sorted_filenames.len()
+        );
+        return Err(handle_server_error(
+            "Stored Merkle tree is invalid (leaf count mismatch)",
+            anyhow::anyhow!(
+                "Tree has {} leaves but batch has {} files",
+                tree.num_leaves(),
+                sorted_filenames.len()
+            ),
+        ));
+    }
 
     // Find file index and generate proof
     let file_index = sorted_filenames
@@ -55,12 +74,4 @@ pub fn proof_to_json(proof: &merkle_tree::MerkleProof) -> Vec<ProofNodeJson> {
             is_left: p.is_left,
         })
         .collect()
-}
-
-/// Prepare file data for download response
-pub fn prepare_file_data(file_content: &[u8]) -> (String, String) {
-    let file_hash = hash_leaf(file_content);
-    let file_hash_hex = hex::encode(file_hash);
-    let file_content_b64 = STANDARD.encode(file_content);
-    (file_hash_hex, file_content_b64)
 }

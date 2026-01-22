@@ -1,4 +1,6 @@
 use anyhow::{Context, Result};
+use crypto::hash_leaf;
+use merkle_tree::MerkleTree;
 use sqlx::PgPool;
 
 /// Query operations for database storage
@@ -97,34 +99,14 @@ impl Queries {
         Ok(exists)
     }
 
-    /// Add filename to batch metadata
-    pub async fn add_filename_to_metadata(
-        pool: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
-        client_id: &str,
-        batch_id: &str,
-        filename: &str,
-    ) -> Result<()> {
-        sqlx::query(
-            "INSERT INTO batch_filenames (client_id, batch_id, filename) 
-             VALUES ($1, $2, $3) ON CONFLICT (client_id, batch_id, filename) DO NOTHING",
-        )
-        .bind(client_id)
-        .bind(batch_id)
-        .bind(filename)
-        .execute(pool)
-        .await
-        .context("Failed to add filename to metadata")?;
-        Ok(())
-    }
-
-    /// Load batch filenames
+    /// Load batch filenames from files table
     pub async fn load_batch_filenames(
         pool: &PgPool,
         client_id: &str,
         batch_id: &str,
     ) -> Result<Vec<String>> {
         let rows = sqlx::query_as::<_, (String,)>(
-            "SELECT filename FROM batch_filenames 
+            "SELECT filename FROM files 
              WHERE client_id = $1 AND batch_id = $2 ORDER BY filename",
         )
         .bind(client_id)
@@ -134,35 +116,6 @@ impl Queries {
         .context("Failed to load batch filenames")?;
 
         Ok(rows.into_iter().map(|(filename,)| filename).collect())
-    }
-
-    /// Read multiple files from a batch
-    pub async fn read_batch_files(
-        pool: &PgPool,
-        client_id: &str,
-        batch_id: &str,
-        filenames: &[String],
-    ) -> Result<Vec<Vec<u8>>> {
-        let mut file_data = Vec::new();
-
-        for filename in filenames {
-            let row = sqlx::query_as::<_, (Vec<u8>,)>(
-                "SELECT content FROM files WHERE client_id = $1 AND batch_id = $2 AND filename = $3",
-            )
-            .bind(client_id)
-            .bind(batch_id)
-            .bind(filename)
-            .fetch_optional(pool)
-            .await
-            .with_context(|| format!("Failed to read file {}", filename))?;
-
-            match row {
-                Some((content,)) => file_data.push(content),
-                None => anyhow::bail!("File {} not found in batch {}", filename, batch_id),
-            }
-        }
-
-        Ok(file_data)
     }
 
     /// Store public key
@@ -189,5 +142,79 @@ impl Queries {
                 .context("Failed to load public key")?;
 
         Ok(row.map(|(key,)| key))
+    }
+
+    /// Compute leaf hashes from file contents
+    /// Reads all files in the batch and computes their leaf hashes
+    pub async fn compute_leaf_hashes_from_files(
+        pool: &PgPool,
+        client_id: &str,
+        batch_id: &str,
+    ) -> Result<Vec<[u8; 32]>> {
+        // Load all filenames sorted
+        let filenames = Self::load_batch_filenames(pool, client_id, batch_id).await?;
+
+        // Compute leaf hash for each file
+        let mut leaf_hashes = Vec::new();
+        for filename in filenames {
+            let content = Self::read_file(pool, client_id, batch_id, &filename)
+                .await?
+                .ok_or_else(|| anyhow::anyhow!("File {} not found", filename))?;
+
+            // Use crypto::hash_leaf to compute hash (same as used during upload)
+            let leaf_hash = hash_leaf(&content);
+            leaf_hashes.push(leaf_hash);
+        }
+
+        Ok(leaf_hashes)
+    }
+
+    /// Store Merkle tree structure
+    pub async fn store_merkle_tree(
+        pool: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+        client_id: &str,
+        batch_id: &str,
+        tree: &MerkleTree,
+    ) -> Result<()> {
+        let tree_json = serde_json::to_value(tree).context("Failed to serialize Merkle tree")?;
+
+        sqlx::query(
+            "INSERT INTO merkle_trees (client_id, batch_id, tree_data) 
+             VALUES ($1, $2, $3)
+             ON CONFLICT (client_id, batch_id) 
+             DO UPDATE SET tree_data = EXCLUDED.tree_data, updated_at = CURRENT_TIMESTAMP",
+        )
+        .bind(client_id)
+        .bind(batch_id)
+        .bind(tree_json)
+        .execute(pool)
+        .await
+        .context("Failed to store Merkle tree")?;
+        Ok(())
+    }
+
+    /// Load Merkle tree structure
+    pub async fn load_merkle_tree(
+        pool: &PgPool,
+        client_id: &str,
+        batch_id: &str,
+    ) -> Result<Option<MerkleTree>> {
+        let row = sqlx::query_as::<_, (serde_json::Value,)>(
+            "SELECT tree_data FROM merkle_trees WHERE client_id = $1 AND batch_id = $2",
+        )
+        .bind(client_id)
+        .bind(batch_id)
+        .fetch_optional(pool)
+        .await
+        .context("Failed to load Merkle tree")?;
+
+        match row {
+            Some((tree_json,)) => {
+                let tree: MerkleTree = serde_json::from_value(tree_json)
+                    .context("Failed to deserialize Merkle tree")?;
+                Ok(Some(tree))
+            }
+            None => Ok(None),
+        }
     }
 }

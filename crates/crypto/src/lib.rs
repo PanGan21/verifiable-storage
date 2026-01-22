@@ -1,5 +1,12 @@
+use aes_gcm::{
+    aead::{Aead, KeyInit},
+    Aes256Gcm,
+};
 use anyhow::{Context, Result};
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
+#[allow(deprecated)] // generic-array 0.14 API is deprecated but required by aes-gcm 0.10
+use generic_array::{typenum::U12, GenericArray};
+use hkdf::Hkdf;
 use rand::rngs::OsRng;
 use sha2::{Digest, Sha256};
 use std::fs;
@@ -92,4 +99,72 @@ pub fn hash_leaf(data: &[u8]) -> [u8; 32] {
         .chain_update(data)
         .finalize()
         .into()
+}
+
+/// Derive encryption key from Ed25519 signing key using HKDF
+/// Uses a fixed salt to ensure deterministic key derivation
+fn derive_encryption_key(signing_key: &SigningKey) -> [u8; 32] {
+    let hk = Hkdf::<Sha256>::new(None, signing_key.as_bytes());
+    // output key material
+    let mut okm = [0u8; 32];
+    // expand the key material with domain separation prefix
+    hk.expand(b"verifiable-storage-encryption-key", &mut okm)
+        .expect("HKDF expansion failed");
+    okm
+}
+
+/// Derive a deterministic nonce for file encryption
+/// Uses filename and batch_id to ensure unique nonce per file
+#[allow(deprecated)] // generic-array 0.14 API is deprecated but required by aes-gcm 0.10
+fn derive_nonce(filename: &str, batch_id: &str) -> GenericArray<u8, U12> {
+    let mut hasher = Sha256::new();
+    hasher.update(b"verifiable-storage-nonce");
+    hasher.update(filename.as_bytes());
+    hasher.update(batch_id.as_bytes());
+    let hash = hasher.finalize();
+
+    // Use first 12 bytes of hash as nonce (AES-GCM requires 12-byte nonce)
+    // Convert [u8; 12] to GenericArray using TryInto (non-deprecated path)
+    let nonce_bytes: [u8; 12] = hash[..12].try_into().expect("Hash slice is 12 bytes");
+    nonce_bytes.into()
+}
+
+/// Encrypt file content using AES-256-GCM
+/// Derives encryption key from Ed25519 signing key
+/// Uses deterministic nonce based on filename and batch_id
+#[allow(deprecated)] // generic-array 0.14 API is deprecated but required by aes-gcm 0.10
+pub fn encrypt_file(
+    signing_key: &SigningKey,
+    filename: &str,
+    batch_id: &str,
+    plaintext: &[u8],
+) -> Result<Vec<u8>> {
+    let key = derive_encryption_key(signing_key);
+    let cipher = Aes256Gcm::new_from_slice(&key)
+        .map_err(|e| anyhow::anyhow!("Failed to create cipher: {}", e))?;
+    let nonce = derive_nonce(filename, batch_id);
+
+    cipher
+        .encrypt(&nonce, plaintext)
+        .map_err(|e| anyhow::anyhow!("Encryption failed: {}", e))
+}
+
+/// Decrypt file content using AES-256-GCM
+/// Derives encryption key from Ed25519 signing key
+/// Uses deterministic nonce based on filename and batch_id
+#[allow(deprecated)] // generic-array 0.14 API is deprecated but required by aes-gcm 0.10
+pub fn decrypt_file(
+    signing_key: &SigningKey,
+    filename: &str,
+    batch_id: &str,
+    ciphertext: &[u8],
+) -> Result<Vec<u8>> {
+    let key = derive_encryption_key(signing_key);
+    let cipher = Aes256Gcm::new_from_slice(&key)
+        .map_err(|e| anyhow::anyhow!("Failed to create cipher: {}", e))?;
+    let nonce = derive_nonce(filename, batch_id);
+
+    cipher
+        .decrypt(&nonce, ciphertext)
+        .map_err(|e| anyhow::anyhow!("Decryption failed: {}", e))
 }

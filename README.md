@@ -7,7 +7,8 @@ A Rust implementation of a verifiable storage system where clients can upload fi
 ## Features
 
 - **Ed25519 Signatures**: Cryptographic authentication for all requests
-- **Merkle Tree Verification**: Cryptographic proofs for file integrity
+- **Client-Side Encryption**: Files encrypted before upload using AES-256-GCM (server never sees plaintext)
+- **Merkle Tree Verification**: Cryptographic proofs for file integrity (built from encrypted data)
 - **Batch-Based Storage**: Files organized by batch_id for isolation
 - **Flexible Backends**: Filesystem or PostgreSQL database storage
 - **Multi-Client Support**: Each client has a unique identity derived from their public key
@@ -26,7 +27,7 @@ cargo build --release
 docker compose up --build
 ```
 
-The server will be available at `http://localhost:8080` with PostgreSQL database storage.
+The server will be available at `http://localhost:8080` through the nginx load balancer, which distributes requests across multiple server instances using round robin. The load balancer also provides rate limiting protection.
 
 For other deployment options (filesystem storage, local development), see the [Architecture Documentation](docs/architecture.md).
 
@@ -125,9 +126,10 @@ cat client2_data/client2-batch-001/root_hash.txt
 **Expected Results:**
 
 - Each client has a unique client ID
-- Each client's files are stored separately on the server
+- Each client's files are stored separately on the server (encrypted)
 - Clients cannot access each other's files (signature verification ensures isolation)
 - Downloaded files match original files (Merkle proof verification succeeds)
+- On download, both encrypted (`.encrypted` suffix) and decrypted files are saved for demo purposes
 
 ## Development
 

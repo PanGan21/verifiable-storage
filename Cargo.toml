@@ -36,5 +36,8 @@ ed25519-dalek = { version = "2.1", features = ["rand_core", "serde"] }
 rand = "0.8"
 sqlx = { version = "0.8", features = ["runtime-tokio-native-tls", "postgres"] }
 actix-multipart = "0.7"
+aes-gcm = "0.10"
+hkdf = "0.12"
+generic-array = "0.14"
 
 

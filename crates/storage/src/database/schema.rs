@@ -11,7 +11,7 @@ impl Schema {
         Self::create_clients_table(pool).await?;
         Self::create_batches_table(pool).await?;
         Self::create_files_table(pool).await?;
-        Self::create_batch_filenames_table(pool).await?;
+        Self::create_merkle_trees_table(pool).await?;
         Self::create_indexes(pool).await?;
         info!("PostgreSQL database storage initialized");
         Ok(())
@@ -74,23 +74,23 @@ impl Schema {
         Ok(())
     }
 
-    /// Create batch_filenames table
-    async fn create_batch_filenames_table(pool: &PgPool) -> Result<()> {
+    /// Create merkle_trees table for storing Merkle tree structures
+    async fn create_merkle_trees_table(pool: &PgPool) -> Result<()> {
         sqlx::query(
             r#"
-            CREATE TABLE IF NOT EXISTS batch_filenames (
+            CREATE TABLE IF NOT EXISTS merkle_trees (
                 client_id VARCHAR(255) NOT NULL,
                 batch_id VARCHAR(255) NOT NULL,
-                filename VARCHAR(255) NOT NULL,
-                PRIMARY KEY (client_id, batch_id, filename),
-                FOREIGN KEY (client_id, batch_id, filename) 
-                    REFERENCES files(client_id, batch_id, filename) ON DELETE CASCADE
+                tree_data JSONB NOT NULL,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (client_id, batch_id),
+                FOREIGN KEY (client_id, batch_id) REFERENCES batches(client_id, batch_id) ON DELETE CASCADE
             )
             "#,
         )
         .execute(pool)
         .await
-        .context("Failed to create batch_filenames table")?;
+        .context("Failed to create merkle_trees table")?;
         Ok(())
     }
 
